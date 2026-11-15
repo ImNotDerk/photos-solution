@@ -18,7 +18,7 @@ import type {
   TriageUpdateRequest,
 } from '../types/index.js';
 import { generateCleanupPayload } from './cleanup.js';
-import { scanStagingDirectory, importFromDownloads } from './ingest.js';
+import { scanStagingDirectory, importFromDownloads, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS } from './ingest.js';
 import {
   checkDuplicates,
   loadLedger,
@@ -27,7 +27,56 @@ import {
   LEDGER_BACKUP_DIR,
   LEDGER_BACKUP_FILENAME,
 } from './ledger.js';
-import { executeBackup, applySuffix } from './backup.js';
+import { executeBackup, applySuffix, isPathInsideRoot } from './backup.js';
+
+export const ALLOWED_UPLOAD_ROLES = new Set(['primary', 'live_video', 'edit_sidecar', 'edited_render']);
+
+/**
+ * Validates directory path to prevent path traversal and unauthorized access
+ * to critical system or user configuration directories.
+ */
+export function validateSafeDirectoryInput(inputPath: string): string | null {
+  if (!inputPath || typeof inputPath !== 'string') {
+    return 'Directory path must be a non-empty string';
+  }
+  if (inputPath.includes('\0')) {
+    return 'Directory path contains null bytes';
+  }
+  if (!path.isAbsolute(inputPath)) {
+    return 'Directory path must be an absolute path';
+  }
+
+  const resolved = path.resolve(inputPath);
+
+  // Check forbidden system / sensitive roots
+  const forbiddenRoots = [
+    '/',
+    '/etc',
+    '/System',
+    '/Library',
+    '/usr',
+    '/bin',
+    '/sbin',
+    '/var/root',
+    '/private/etc',
+  ];
+  for (const forbidden of forbiddenRoots) {
+    if (resolved === forbidden || (forbidden !== '/' && resolved.startsWith(forbidden + path.sep))) {
+      return `Access to system directory "${inputPath}" is denied`;
+    }
+  }
+
+  // Check user sensitive folders (~/.ssh, ~/.gnupg)
+  const home = os.homedir();
+  const sensitiveUserDirs = [path.join(home, '.ssh'), path.join(home, '.gnupg')];
+  for (const sens of sensitiveUserDirs) {
+    if (resolved === sens || resolved.startsWith(sens + path.sep)) {
+      return `Access to sensitive directory "${inputPath}" is denied`;
+    }
+  }
+
+  return null;
+}
 
 export function computeCounts(bundles: AssetBundle[]): TriageCounts {
   const counts: TriageCounts = {
@@ -173,6 +222,9 @@ export const routes: FastifyPluginAsync<RoutesOptions> = async (
     await fastify.register(fastifyMultipart, {
       limits: {
         fileSize: 200 * 1024 * 1024,
+        files: 4,
+        fields: 15,
+        fieldSize: 64 * 1024,
       },
     });
   }
@@ -195,9 +247,13 @@ export const routes: FastifyPluginAsync<RoutesOptions> = async (
     const { stagingDir, hardDriveRoot, scan } = request.query;
 
     if (stagingDir) {
+      const err = validateSafeDirectoryInput(stagingDir);
+      if (err) return reply.status(400).send({ error: err });
       manager.setState({ stagingDir });
     }
     if (hardDriveRoot) {
+      const err = validateSafeDirectoryInput(hardDriveRoot);
+      if (err) return reply.status(400).send({ error: err });
       manager.setState({ hardDriveRoot });
     }
 
@@ -305,7 +361,33 @@ export const routes: FastifyPluginAsync<RoutesOptions> = async (
   fastify.post<{
     Body: Partial<SessionState & { cleanupCompleted?: boolean }>;
   }>('/api/session', async (request, reply) => {
-    const updated = manager.setState(request.body || {});
+    const body = request.body || {};
+    if (body.stagingDir) {
+      const err = validateSafeDirectoryInput(body.stagingDir);
+      if (err) return reply.status(400).send({ error: err });
+    }
+    if (body.hardDriveRoot) {
+      const err = validateSafeDirectoryInput(body.hardDriveRoot);
+      if (err) return reply.status(400).send({ error: err });
+    }
+
+    const currentStaging = body.stagingDir || manager.getState().stagingDir;
+    if (body.bundles && currentStaging) {
+      for (const b of body.bundles) {
+        if (b.files) {
+          for (const f of b.files) {
+            if (!isPathInsideRoot(f.path, currentStaging)) {
+              return reply.status(400).send({ error: `Bundle file path outside staging directory: ${f.path}` });
+            }
+          }
+        }
+        if (b.previewPath && !isPathInsideRoot(b.previewPath, currentStaging)) {
+          return reply.status(400).send({ error: `Bundle previewPath outside staging directory: ${b.previewPath}` });
+        }
+      }
+    }
+
+    const updated = manager.setState(body);
     return reply.status(200).send(updated);
   });
 
@@ -385,6 +467,12 @@ export const routes: FastifyPluginAsync<RoutesOptions> = async (
         error: 'Both hardDriveRoot and stagingDir must be specified before running backup.',
       });
     }
+
+    const hdErr = validateSafeDirectoryInput(hardDriveRoot);
+    if (hdErr) return reply.status(400).send({ error: hdErr });
+
+    const stErr = validateSafeDirectoryInput(stagingDir);
+    if (stErr) return reply.status(400).send({ error: stErr });
 
     manager.setState({
       hardDriveRoot,
@@ -556,6 +644,17 @@ export const routes: FastifyPluginAsync<RoutesOptions> = async (
     const currentState = manager.getState();
     let hardDriveRoot = query?.hardDriveRoot || currentState.hardDriveRoot;
 
+    if (query?.hardDriveRoot) {
+      const err = validateSafeDirectoryInput(query.hardDriveRoot);
+      if (err) {
+        return reply.status(400).send({
+          success: false,
+          error: err,
+          errors: [err],
+        });
+      }
+    }
+
     // Check hard drive access early if hardDriveRoot is already known
     if (hardDriveRoot && !(await isHardDriveMounted(hardDriveRoot))) {
       return reply.status(400).send({
@@ -608,7 +707,31 @@ export const routes: FastifyPluginAsync<RoutesOptions> = async (
       const parts = request.parts();
       for await (const part of parts) {
         if (part.type === 'file') {
+          if (!ALLOWED_UPLOAD_ROLES.has(part.fieldname)) {
+            for await (const _ of part.file) {}
+            await cleanupTmpFiles();
+            const msg = `Disallowed upload fieldname "${part.fieldname}". Allowed roles: ${Array.from(ALLOWED_UPLOAD_ROLES).join(', ')}`;
+            return reply.status(400).send({
+              success: false,
+              error: msg,
+              errors: [msg],
+            });
+          }
+
           const safeFilename = path.basename(part.filename || `${part.fieldname}.bin`);
+          const ext = path.extname(safeFilename).toLowerCase();
+          const isAllowedExt = IMAGE_EXTENSIONS.has(ext) || VIDEO_EXTENSIONS.has(ext) || ext === '.aae';
+          if (safeFilename.startsWith('.') || !isAllowedExt) {
+            for await (const _ of part.file) {}
+            await cleanupTmpFiles();
+            const msg = `Disallowed upload file "${safeFilename}". Extension not supported or hidden dotfile.`;
+            return reply.status(400).send({
+              success: false,
+              error: msg,
+              errors: [msg],
+            });
+          }
+
           const randomSuffix = crypto.randomBytes(6).toString('hex');
           const tmpFilePath = path.join(
             tmpBase,
@@ -672,6 +795,15 @@ export const routes: FastifyPluginAsync<RoutesOptions> = async (
 
     try {
       if (fields.hardDriveRoot) {
+        const err = validateSafeDirectoryInput(fields.hardDriveRoot);
+        if (err) {
+          await cleanupTmpFiles();
+          return reply.status(400).send({
+            success: false,
+            error: err,
+            errors: [err],
+          });
+        }
         hardDriveRoot = fields.hardDriveRoot;
       }
       if (!hardDriveRoot || !(await isHardDriveMounted(hardDriveRoot))) {
@@ -734,6 +866,19 @@ export const routes: FastifyPluginAsync<RoutesOptions> = async (
           error: msg,
           errors: [msg],
         });
+      }
+
+      if (fields.expectedPrimarySha256) {
+        const expected = fields.expectedPrimarySha256.trim().toLowerCase();
+        if (primaryFile.hash.toLowerCase() !== expected) {
+          await cleanupTmpFiles();
+          const msg = `Client-side SHA-256 mismatch against uploaded primary payload (expected: ${expected.slice(0, 12)}..., computed: ${primaryFile.hash.slice(0, 12)}...).`;
+          return reply.status(400).send({
+            success: false,
+            error: msg,
+            errors: [msg],
+          });
+        }
       }
 
       // Guard against intra-bundle duplicate filenames

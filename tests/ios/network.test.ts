@@ -415,7 +415,12 @@ assert(payloadString.contains("name=\\"primary\\"; filename=\\"IMG_9999.HEIC\\""
 assert(payloadString.contains("name=\\"live_video\\"; filename=\\"IMG_9999.MOV\\""), "Payload must contain live_video part")
 assert(payloadString.hasSuffix("--" + boundary + "--\\r\\n"), "Payload must end with closing boundary CRLF")
 
-// 2. Verify URL sanitization
+// 2. Verify computeSHA256 CryptoKit calculation
+let computedSha = try NetworkManager.computeSHA256(for: primaryResource)
+assert(computedSha.count == 64, "SHA-256 hex must be 64 characters")
+assert(computedSha == "8cbb0ab4949076f642f0382cd9121796e2e3959cefb955e4878476d0f30678b0", "Must match expected SHA-256 for 'Primary photo bytes'")
+
+// 3. Verify URL sanitization
 assert(NetworkManager.sanitizeUrl("http://10.142.1.127:3000/") == "http://10.142.1.127:3000", "Must strip trailing slash")
 assert(NetworkManager.sanitizeUrl("10.142.1.127:3000") == "http://10.142.1.127:3000", "Must prepend http://")
 assert(NetworkManager.sanitizeUrl("https://mac.local:3000//") == "https://mac.local:3000", "Must keep https")

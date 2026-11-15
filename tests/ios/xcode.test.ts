@@ -51,7 +51,7 @@ describe('Xcode Project & Info.plist Configuration Tests (Task 5)', () => {
       expect(plist.NSAppTransportSecurity).toBeDefined();
       expect(typeof plist.NSAppTransportSecurity).toBe('object');
       expect(plist.NSAppTransportSecurity.NSAllowsLocalNetworking).toBe(true);
-      expect(plist.NSAppTransportSecurity.NSAllowsArbitraryLoads).toBe(true);
+      expect(plist.NSAppTransportSecurity.NSAllowsArbitraryLoads).toBe(false);
     });
 
     it('specifies CFBundleShortVersionString and CFBundleVersion', () => {

@@ -85,6 +85,11 @@ async function walkDirectory(dir: string): Promise<DiscoveredFile[]> {
       continue;
     }
 
+    // Ignore symbolic links to prevent directory escape / symlink attacks
+    if (entry.isSymbolicLink()) {
+      continue;
+    }
+
     const fullPath = path.join(dir, entry.name);
 
     if (entry.isDirectory()) {

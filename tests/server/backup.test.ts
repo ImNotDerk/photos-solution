@@ -4,7 +4,7 @@ import * as path from 'path';
 import * as os from 'os';
 import * as crypto from 'crypto';
 import type { AssetBundle, AssetFile, LedgerEntry, BackupResult } from '../../src/types/index.js';
-import { executeBackup } from '../../src/server/backup.js';
+import { executeBackup, isPathInsideRoot } from '../../src/server/backup.js';
 import { computeFileHash, loadLedger, saveLedger, LEDGER_FILENAME } from '../../src/server/ledger.js';
 
 describe('Backup Execution & Byte/Hash Verification', () => {
@@ -656,6 +656,67 @@ describe('Backup Execution & Byte/Hash Verification', () => {
       const newHash = crypto.createHash('sha256').update('New Month Photo').digest('hex');
       expect(updatedLedger.has(newHash)).toBe(true);
       expect(updatedLedger.get(newHash)?.targetRelPath).toBe('2024/FEBRUARY/IMG_0002.HEIC');
+    });
+  });
+
+  describe('Security & Path Confinement Invariants', () => {
+    it('isPathInsideRoot accurately detects path containment and rejects traversal', () => {
+      expect(isPathInsideRoot('/staging/sub/photo.jpg', '/staging')).toBe(true);
+      expect(isPathInsideRoot('/staging/photo.jpg', '/staging')).toBe(true);
+      expect(isPathInsideRoot('/staging/../etc/passwd', '/staging')).toBe(false);
+      expect(isPathInsideRoot('/staging-other/photo.jpg', '/staging')).toBe(false);
+      expect(isPathInsideRoot('/staging', '/staging')).toBe(false); // file cannot be the directory itself
+      expect(isPathInsideRoot('', '/staging')).toBe(false);
+    });
+
+    it('refuses to execute and never unlinks files outside stagingDir', async () => {
+      // Create external file that should NEVER be touched
+      const externalFile = path.join(tempDir, 'critical-external-file.txt');
+      await fs.writeFile(externalFile, 'DO NOT DELETE OR COPY ME');
+
+      const rogueBundle: AssetBundle = {
+        id: 'ROGUE_001',
+        canonicalName: 'ROGUE_001',
+        files: [{ path: externalFile, filename: 'critical-external-file.txt', ext: '.txt', size: 24, role: 'primary' }],
+        previewPath: externalFile,
+        capturedAt: '2024-03-01T10:00:00.000Z',
+        targetYear: '2024',
+        targetMonth: 'MARCH',
+        dateReliable: true,
+        decision: 'trash', // attempts to purge external file
+        alreadyBackedUp: false,
+      };
+
+      const result = await executeBackup([rogueBundle], hardDriveDir, stagingDir);
+      expect(result.success).toBe(false);
+      expect(result.errors?.length).toBeGreaterThan(0);
+      expect(result.errors?.[0]).toMatch(/escapes stagingDir/i);
+
+      // Verify the external file is intact and untouched
+      expect(await fileExists(externalFile)).toBe(true);
+      const content = await fs.readFile(externalFile, 'utf8');
+      expect(content).toBe('DO NOT DELETE OR COPY ME');
+    });
+
+    it('rejects path traversal in targetYear or targetMonth', async () => {
+      const f1 = await createStagingFile('IMG_TRAVERSAL.HEIC', 'Photo bytes');
+      const traversalBundle: AssetBundle = {
+        id: 'TRAV_001',
+        canonicalName: 'TRAV_001',
+        files: [{ path: f1.path, filename: 'IMG_TRAVERSAL.HEIC', ext: '.heic', size: f1.size, role: 'primary' }],
+        previewPath: f1.path,
+        capturedAt: '2024-03-01T10:00:00.000Z',
+        targetYear: '../../etc',
+        targetMonth: 'MARCH',
+        dateReliable: true,
+        decision: 'backup_only',
+        alreadyBackedUp: false,
+      };
+
+      const result = await executeBackup([traversalBundle], hardDriveDir, stagingDir);
+      expect(result.success).toBe(false);
+      expect(result.errors?.length).toBeGreaterThan(0);
+      expect(result.errors?.[0]).toMatch(/Invalid targetYear/i);
     });
   });
 });

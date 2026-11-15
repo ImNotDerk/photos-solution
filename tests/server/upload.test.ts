@@ -503,4 +503,164 @@ describe('POST /api/upload - Mac Server Streaming Upload Endpoint', () => {
       await corruptApp.close();
     }
   });
+
+  it('accepts upload when expectedPrimarySha256 matches primary file content', async () => {
+    const photoContent = 'Exact photo content for hash check';
+    const expectedHash = crypto.createHash('sha256').update(photoContent).digest('hex');
+
+    const { payload, contentType } = buildMultipartPayload(
+      {
+        bundleId: 'IMG_9101',
+        canonicalName: 'IMG_9101',
+        targetYear: '2024',
+        targetMonth: 'NOVEMBER',
+        decision: 'backup_only',
+        expectedPrimarySha256: expectedHash,
+      },
+      [{ fieldname: 'primary', filename: 'IMG_9101.HEIC', content: photoContent }]
+    );
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/upload',
+      headers: { 'content-type': contentType },
+      payload,
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.success).toBe(true);
+    expect(body.entries[0].sha256).toBe(expectedHash);
+  });
+
+  it('rejects upload with 400 when expectedPrimarySha256 does NOT match primary file content', async () => {
+    const photoContent = 'Real content';
+    const bogusHash = '0000000000000000000000000000000000000000000000000000000000000000';
+
+    const { payload, contentType } = buildMultipartPayload(
+      {
+        bundleId: 'IMG_9102',
+        canonicalName: 'IMG_9102',
+        targetYear: '2024',
+        targetMonth: 'NOVEMBER',
+        decision: 'backup_only',
+        expectedPrimarySha256: bogusHash,
+      },
+      [{ fieldname: 'primary', filename: 'IMG_9102.HEIC', content: photoContent }]
+    );
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/upload',
+      headers: { 'content-type': contentType },
+      payload,
+    });
+
+    expect(res.statusCode).toBe(400);
+    const body = res.json();
+    expect(body.success).toBe(false);
+    expect(body.error).toMatch(/mismatch/i);
+  });
+
+  it('rejects upload with 400 when uploaded file has an unauthorized extension or is a dotfile', async () => {
+    const { payload: scriptPayload, contentType: scriptCt } = buildMultipartPayload(
+      {
+        bundleId: 'IMG_9103',
+        canonicalName: 'IMG_9103',
+        targetYear: '2024',
+        targetMonth: 'NOVEMBER',
+        decision: 'backup_only',
+      },
+      [{ fieldname: 'primary', filename: 'payload.sh', content: '#!/bin/sh\nrm -rf /' }]
+    );
+
+    const scriptRes = await app.inject({
+      method: 'POST',
+      url: '/api/upload',
+      headers: { 'content-type': scriptCt },
+      payload: scriptPayload,
+    });
+
+    expect(scriptRes.statusCode).toBe(400);
+    expect(scriptRes.json().error).toMatch(/Disallowed/i);
+
+    const { payload: dotPayload, contentType: dotCt } = buildMultipartPayload(
+      {
+        bundleId: 'IMG_9104',
+        canonicalName: 'IMG_9104',
+        targetYear: '2024',
+        targetMonth: 'NOVEMBER',
+        decision: 'backup_only',
+      },
+      [{ fieldname: 'primary', filename: '.secret.jpg', content: 'Hidden file' }]
+    );
+
+    const dotRes = await app.inject({
+      method: 'POST',
+      url: '/api/upload',
+      headers: { 'content-type': dotCt },
+      payload: dotPayload,
+    });
+
+    expect(dotRes.statusCode).toBe(400);
+    expect(dotRes.json().error).toMatch(/Disallowed/i);
+  });
+
+  it('rejects upload with 400 when query.hardDriveRoot points to a forbidden system directory', async () => {
+    const { payload, contentType } = buildMultipartPayload(
+      {
+        bundleId: 'IMG_9105',
+        canonicalName: 'IMG_9105',
+        targetYear: '2024',
+        targetMonth: 'NOVEMBER',
+        decision: 'backup_only',
+      },
+      [{ fieldname: 'primary', filename: 'IMG_9105.HEIC', content: 'Test' }]
+    );
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/upload?hardDriveRoot=/etc',
+      headers: { 'content-type': contentType },
+      payload,
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toMatch(/system directory/i);
+  });
+
+  it('enforces CORS origin policy: permits LAN origins and rejects external web origins', async () => {
+    // 1. External malicious origin
+    const evilRes = await app.inject({
+      method: 'OPTIONS',
+      url: '/api/session',
+      headers: {
+        origin: 'https://evil.example.com',
+        'access-control-request-method': 'GET',
+      },
+    });
+    expect(evilRes.headers['access-control-allow-origin']).toBeUndefined();
+
+    // 2. Local LAN origin (e.g. 192.168.1.100)
+    const lanRes = await app.inject({
+      method: 'OPTIONS',
+      url: '/api/session',
+      headers: {
+        origin: 'http://192.168.1.100:3000',
+        'access-control-request-method': 'GET',
+      },
+    });
+    expect(lanRes.headers['access-control-allow-origin']).toBe('http://192.168.1.100:3000');
+
+    // 3. Localhost origin
+    const localRes = await app.inject({
+      method: 'OPTIONS',
+      url: '/api/session',
+      headers: {
+        origin: 'http://localhost:5173',
+        'access-control-request-method': 'GET',
+      },
+    });
+    expect(localRes.headers['access-control-allow-origin']).toBe('http://localhost:5173');
+  });
 });

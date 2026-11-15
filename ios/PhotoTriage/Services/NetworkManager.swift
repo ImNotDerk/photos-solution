@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import CryptoKit
 #if canImport(UIKit)
 import UIKit
 #elseif canImport(AppKit)
@@ -243,6 +244,29 @@ public final class NetworkManager: ObservableObject, Sendable {
         }
     }
 
+    // MARK: - Checksum Computation Engine
+
+    /// Computes the SHA-256 hex digest of an ExtractedResource using Apple CryptoKit.
+    /// Streams disk files in 1 MB chunks to prevent high memory footprint.
+    public static func computeSHA256(for resource: ExtractedResource) throws -> String {
+        var hasher = SHA256()
+        if let fileURL = resource.fileURL {
+            let handle = try FileHandle(forReadingFrom: fileURL)
+            defer { try? handle.close() }
+            while true {
+                let chunk = handle.readData(ofLength: 1024 * 1024)
+                if chunk.isEmpty { break }
+                hasher.update(data: chunk)
+            }
+        } else if let data = resource.data {
+            hasher.update(data: data)
+        } else {
+            throw NetworkError.missingPrimaryResource("Resource has neither fileURL nor data")
+        }
+        let digest = hasher.finalize()
+        return digest.map { String(format: "%02x", $0) }.joined()
+    }
+
     // MARK: - Multipart Upload Engine
 
     /// Uploads an asset bundle along with its extracted companion resources to the Mac server.
@@ -261,6 +285,12 @@ public final class NetworkManager: ObservableObject, Sendable {
         guard resources.contains(where: { $0.role == .primary }) else {
             throw NetworkError.missingPrimaryResource(asset.id)
         }
+        guard let primaryResource = resources.first(where: { $0.role == .primary }) else {
+            throw NetworkError.missingPrimaryResource(asset.id)
+        }
+
+        // Compute local SHA-256 checksum of primary asset for end-to-end receipt verification
+        let expectedSha256 = try Self.computeSHA256(for: primaryResource)
 
         guard let uploadUrl = URL(string: "\(cleanServerUrl)/api/upload") else {
             throw NetworkError.invalidUrl("\(cleanServerUrl)/api/upload")
@@ -283,7 +313,8 @@ public final class NetworkManager: ObservableObject, Sendable {
             ("capturedAt", asset.capturedAtISO),
             ("targetYear", asset.targetYear),
             ("targetMonth", asset.targetMonth),
-            ("decision", decision.rawValue)
+            ("decision", decision.rawValue),
+            ("expectedPrimarySha256", expectedSha256)
         ]
 
         let boundary = "Boundary-\(UUID().uuidString)"
@@ -403,10 +434,19 @@ public final class NetworkManager: ObservableObject, Sendable {
                 throw netErr
             }
 
-            // Invariant: Response must confirm a valid non-empty SHA-256 hash in ledger entries
+            // Invariant: Response must confirm a valid non-empty SHA-256 hash matching iPhone source calculation
             guard let firstEntry = entries.first,
                   !firstEntry.sha256.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 let netErr = NetworkError.verificationFailed("Server response did not confirm a valid SHA-256 ledger checksum")
+                self.lastError = netErr.localizedDescription
+                throw netErr
+            }
+
+            let serverSha256 = firstEntry.sha256.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            guard serverSha256 == expectedSha256.lowercased() else {
+                let netErr = NetworkError.verificationFailed(
+                    "SHA-256 mismatch between iPhone source (\(expectedSha256.prefix(8))) and Mac server (\(serverSha256.prefix(8)))"
+                )
                 self.lastError = netErr.localizedDescription
                 throw netErr
             }

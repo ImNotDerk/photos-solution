@@ -181,22 +181,70 @@ export function parseCliArgs(args: string[] = process.argv.slice(2)): {
 }
 
 /**
+ * Determines whether an incoming HTTP Origin is permitted under local network CORS policy.
+ * Permits:
+ * - Missing Origin (direct non-browser requests from native iOS URLSession, curl, etc.)
+ * - Localhost / Loopback (localhost, 127.0.0.1, [::1], ::1)
+ * - RFC 1918 Private LAN IPs (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)
+ * - Local mDNS / Bonjour hostnames (*.local)
+ * Rejects public internet origins (e.g. https://evil.example.com).
+ */
+export function isAllowedCorsOrigin(origin?: string): boolean {
+  if (!origin) return true;
+  try {
+    const parsed = new URL(origin);
+    const hostname = parsed.hostname.toLowerCase();
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]' || hostname === '::1') {
+      return true;
+    }
+    if (/^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname)) {
+      return true;
+    }
+    if (/^192\.168\.\d{1,3}\.\d{1,3}$/.test(hostname)) {
+      return true;
+    }
+    const match172 = hostname.match(/^172\.(\d{1,3})\.\d{1,3}\.\d{1,3}$/);
+    if (match172) {
+      const second = parseInt(match172[1], 10);
+      if (second >= 16 && second <= 31) {
+        return true;
+      }
+    }
+    if (hostname.endsWith('.local')) {
+      return true;
+    }
+  } catch {
+    return false;
+  }
+  return false;
+}
+
+/**
  * Factory creating the Fastify server instance with CORS, static file serving,
  * image preview routing, and REST API endpoints.
  */
 export async function createServer(options?: ServerOptions): Promise<FastifyInstance> {
   const app = Fastify({ logger: false });
 
-  // Register CORS
+  // Register CORS restricted to local network origins and non-browser clients
   await app.register(fastifyCors, {
-    origin: true,
+    origin: (origin, callback) => {
+      if (isAllowedCorsOrigin(origin)) {
+        callback(null, true);
+      } else {
+        callback(null, false);
+      }
+    },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   });
 
-  // Register Multipart for streaming uploads with 200MB file limit
+  // Register Multipart for streaming uploads with resource limits
   await app.register(fastifyMultipart, {
     limits: {
       fileSize: 200 * 1024 * 1024,
+      files: 4,
+      fields: 15,
+      fieldSize: 64 * 1024,
     },
   });
 

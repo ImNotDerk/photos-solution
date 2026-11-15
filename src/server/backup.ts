@@ -22,6 +22,16 @@ export function findPrimaryFile(bundle: AssetBundle): AssetFile | undefined {
 }
 
 /**
+ * Confirms that childPath resolves strictly inside rootPath (preventing directory traversal).
+ */
+export function isPathInsideRoot(childPath: string, rootPath: string): boolean {
+  if (!childPath || !rootPath) return false;
+  const resolvedRoot = path.resolve(rootPath);
+  const resolvedChild = path.resolve(childPath);
+  return resolvedChild.startsWith(resolvedRoot + path.sep);
+}
+
+/**
  * Applies a collision suffix to a filename (e.g. IMG_1001.HEIC + "_2" -> IMG_1001_2.HEIC).
  */
 export function applySuffix(filename: string, suffix: string): string {
@@ -160,6 +170,20 @@ export async function executeBackup(
 
   // 3. Resolve destination paths and collision suffixes
   try {
+    // Validate that all trash bundles are strictly confined to stagingDir
+    for (const tb of trashBundles) {
+      if (tb.files) {
+        for (const file of tb.files) {
+          if (!isPathInsideRoot(file.path, stagingDir)) {
+            errors.push(`Trash file escapes stagingDir for bundle ${tb.id}: "${file.path}"`);
+          }
+        }
+      }
+      if (tb.previewPath && !isPathInsideRoot(tb.previewPath, stagingDir)) {
+        errors.push(`Trash previewPath escapes stagingDir for bundle ${tb.id}: "${tb.previewPath}"`);
+      }
+    }
+
     for (const bundle of backupBundles) {
       if (!bundle.files || bundle.files.length === 0) {
         continue;
@@ -167,7 +191,33 @@ export async function executeBackup(
 
       const targetYear = bundle.targetYear || String(new Date().getFullYear());
       const targetMonth = bundle.targetMonth ? bundle.targetMonth.trim().toUpperCase() : 'UNKNOWN';
+
+      if (!/^\d{4}$/.test(targetYear)) {
+        errors.push(`Invalid targetYear "${targetYear}" for bundle ${bundle.id}`);
+        continue;
+      }
+      if (!/^[A-Z0-9_-]+$/i.test(targetMonth)) {
+        errors.push(`Invalid targetMonth "${targetMonth}" for bundle ${bundle.id}`);
+        continue;
+      }
+
       const destDir = path.join(hardDriveRoot, targetYear, targetMonth);
+      if (!isPathInsideRoot(destDir, hardDriveRoot)) {
+        errors.push(`Resolved destDir escapes hardDriveRoot for bundle ${bundle.id}: "${destDir}"`);
+        continue;
+      }
+
+      let bundleEscapes = false;
+      for (const file of bundle.files) {
+        if (!isPathInsideRoot(file.path, stagingDir)) {
+          errors.push(`Source file escapes stagingDir for bundle ${bundle.id}: "${file.path}"`);
+          bundleEscapes = true;
+          break;
+        }
+      }
+      if (bundleEscapes) {
+        continue;
+      }
 
       await fs.mkdir(destDir, { recursive: true });
 
@@ -270,6 +320,16 @@ export async function executeBackup(
       verifiedCount: 0,
       failedFiles: [],
       errors: [err.message || String(err)],
+    };
+  }
+
+  if (errors.length > 0) {
+    return {
+      success: false,
+      copiedCount: 0,
+      verifiedCount: 0,
+      failedFiles: [],
+      errors,
     };
   }
 
@@ -399,28 +459,32 @@ export async function executeBackup(
 
   // 8. Staging Purge: remove verified backup files and trash files
   try {
-    // Delete verified backup files from staging
+    // Delete verified backup files from staging (only unlinking paths strictly confined to stagingDir)
     for (const pb of plannedBundles) {
       for (const file of pb.bundle.files) {
-        await safeUnlink(file.path);
+        if (isPathInsideRoot(file.path, stagingDir)) {
+          await safeUnlink(file.path);
+        }
       }
       if (
         pb.bundle.previewPath &&
-        pb.bundle.previewPath.startsWith(stagingDir) &&
+        isPathInsideRoot(pb.bundle.previewPath, stagingDir) &&
         !pb.bundle.files.some((f) => f.path === pb.bundle.previewPath)
       ) {
         await safeUnlink(pb.bundle.previewPath);
       }
     }
 
-    // Delete trash files from staging
+    // Delete trash files from staging (only unlinking paths strictly confined to stagingDir)
     for (const tb of trashBundles) {
       for (const file of tb.files) {
-        await safeUnlink(file.path);
+        if (isPathInsideRoot(file.path, stagingDir)) {
+          await safeUnlink(file.path);
+        }
       }
       if (
         tb.previewPath &&
-        tb.previewPath.startsWith(stagingDir) &&
+        isPathInsideRoot(tb.previewPath, stagingDir) &&
         !tb.files.some((f) => f.path === tb.previewPath)
       ) {
         await safeUnlink(tb.previewPath);
