@@ -19,11 +19,12 @@ public struct SingleTriageView: View {
     @State private var currentImage: UIImage? = nil
     @State private var isLoadingImage = false
 
-    // Zoom and Navigation
+    // Zoom, Navigation, and Cancellable Auto-Advance
     @State private var zoomScale: CGFloat = 1.0
     @State private var dragOffset: CGSize = .zero
     @State private var transientDecision: TriageDecision? = nil
     @State private var showDetailsSheet: Bool = false
+    @State private var autoAdvanceTask: Task<Void, Never>? = nil
 
     public init(onDismissToGrid: (() -> Void)? = nil) {
         self.onDismissToGrid = onDismissToGrid
@@ -64,7 +65,8 @@ public struct SingleTriageView: View {
             if let asset = currentAsset {
                 PhotoDetailsSheetView(
                     asset: asset,
-                    decision: currentDecision
+                    decision: currentDecision,
+                    hardDriveRoot: "/Volumes/PhotosHD"
                 )
             }
         }
@@ -108,6 +110,10 @@ public struct SingleTriageView: View {
             HStack(spacing: 16) {
                 Button {
                     triggerHapticFeedback(0)
+                    autoAdvanceTask?.cancel()
+                    withAnimation {
+                        transientDecision = nil
+                    }
                     _ = triageState.undo()
                 } label: {
                     Image(systemName: "arrow.uturn.backward")
@@ -219,6 +225,10 @@ public struct SingleTriageView: View {
                 let dy = val.translation.height
 
                 if abs(dx) > 50 && abs(dx) > abs(dy) {
+                    autoAdvanceTask?.cancel()
+                    withAnimation {
+                        transientDecision = nil
+                    }
                     if dx < 0 {
                         // Swipe Left: Next Photo
                         triggerHapticFeedback(0)
@@ -339,12 +349,16 @@ public struct SingleTriageView: View {
 
     private func applyTriageDecision(_ decision: TriageDecision) {
         triggerHapticFeedback(1)
+        autoAdvanceTask?.cancel()
+
         withAnimation(.easeInOut(duration: 0.15)) {
             transientDecision = decision
         }
         triageState.triageCurrent(as: decision, autoAdvance: false)
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+        autoAdvanceTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            guard !Task.isCancelled else { return }
             withAnimation(.easeInOut(duration: 0.2)) {
                 transientDecision = nil
                 triageState.goToNext()

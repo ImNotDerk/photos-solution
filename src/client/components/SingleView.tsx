@@ -230,7 +230,8 @@ export const SingleView: React.FC<SingleViewProps> = ({
     }
   };
 
-  const displayDecision = feedbackStatus || (bundle.decision !== 'unsorted' ? bundle.decision : null);
+  // Status banner is strictly transient feedback during a triage action tap
+  const displayDecision = feedbackStatus;
 
   return (
     <div

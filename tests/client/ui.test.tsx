@@ -660,4 +660,22 @@ describe('App Controller Component', () => {
     const escBtn = screen.getByRole('button', { name: /esc/i });
     fireEvent.click(escBtn);
   });
+
+  it('single view auto-advances only once on decision tap without skipping photos', async () => {
+    render(<App />);
+    expect(await screen.findByText('IMG_1001')).toBeDefined();
+
+    // Click trash button
+    const trashBtn = screen.getByRole('button', { name: /trash/i });
+    fireEvent.click(trashBtn);
+
+    // Immediately after click, current photo is still IMG_1001 (transient feedback visible)
+    expect(screen.getByText('IMG_1001')).toBeDefined();
+
+    // Wait for the 250ms debounced auto-advance
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    // Advances to IMG_1002 (did NOT double advance to IMG_1003!)
+    expect(screen.getByText('IMG_1002')).toBeDefined();
+  });
 });

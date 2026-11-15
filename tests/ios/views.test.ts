@@ -339,7 +339,7 @@ describe('iOS Utilitarian SwiftUI Views Contract Tests (Task 4)', () => {
       expect(contentCode).toContain('case grid');
       expect(contentCode).toContain('case backup');
       expect(contentCode).toContain('case settings');
-      expect(contentCode).toContain('SingleTriageView()');
+      expect(contentCode).toContain('SingleTriageView');
       expect(contentCode).toContain('GridTriageView');
       expect(contentCode).toContain('BackupProgressView()');
       expect(contentCode).toContain('SettingsView()');

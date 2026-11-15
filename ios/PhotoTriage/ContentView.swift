@@ -56,7 +56,9 @@ public struct ContentView: View {
                 ZStack {
                     switch selectedTab {
                     case .single:
-                        SingleTriageView()
+                        SingleTriageView(onDismissToGrid: {
+                            selectedTab = .grid
+                        })
                     case .grid:
                         GridTriageView { _ in
                             // When user selects asset in grid, switch to Single view

@@ -8,7 +8,7 @@ public struct PhotoDetailsSheetView: View {
     let decision: TriageDecision
     let hardDriveRoot: String
 
-    public init(asset: TriageAsset, decision: TriageDecision, hardDriveRoot: String = "/Volumes/Media Drive") {
+    public init(asset: TriageAsset, decision: TriageDecision, hardDriveRoot: String = "/Volumes/PhotosHD") {
         self.asset = asset
         self.decision = decision
         self.hardDriveRoot = hardDriveRoot

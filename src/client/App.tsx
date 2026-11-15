@@ -125,11 +125,6 @@ export const App: React.FC = () => {
       counts: newCounts,
     }));
 
-    // Auto-advance in single view
-    if (currentIndex < sessionState.bundles.length - 1) {
-      setCurrentIndex((prev) => prev + 1);
-    }
-
     try {
       const res = await fetch('/api/triage', {
         method: 'POST',

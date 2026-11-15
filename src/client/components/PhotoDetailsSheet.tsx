@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import type { AssetBundle } from '../../types/index.js';
 import { formatBytes, formatCapturedDate } from './SingleView.js';
 
@@ -13,6 +13,18 @@ export const PhotoDetailsSheet: React.FC<PhotoDetailsSheetProps> = ({
   isOpen,
   onClose,
 }) => {
+  // Close on Escape key
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   const totalBytes = bundle.files.reduce((acc, f) => acc + (f.size || 0), 0);
