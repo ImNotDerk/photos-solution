@@ -408,12 +408,14 @@ public struct GridThumbnailCell: View {
     }
 
     public var body: some View {
+        let displayImage = thumbnail ?? PhotoKitManager.shared.cachedThumbnail(for: asset)
+
         ZStack(alignment: .topTrailing) {
             // Thumbnail Image Canvas
             ZStack {
                 Color.slate900
 
-                if let image = thumbnail {
+                if let image = displayImage {
                     Image(platformImage: image)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
@@ -497,6 +499,10 @@ public struct GridThumbnailCell: View {
             cornerRadius: 2
         )
         .task(id: asset.id) {
+            if let cached = PhotoKitManager.shared.cachedThumbnail(for: asset) {
+                thumbnail = cached
+                return
+            }
             let img = await PhotoKitManager.shared.loadThumbnail(for: asset)
             thumbnail = img
         }

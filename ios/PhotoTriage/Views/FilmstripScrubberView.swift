@@ -18,7 +18,8 @@ public struct FilmstripScrubberView: View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: 5) {
-                    ForEach(Array(triageState.assets.enumerated()), id: \.element.id) { index, asset in
+                    ForEach(triageState.assets.indices, id: \.self) { index in
+                        let asset = triageState.assets[index]
                         FilmstripThumbnailItem(
                             asset: asset,
                             isSelected: index == triageState.currentIndex,
@@ -34,9 +35,12 @@ public struct FilmstripScrubberView: View {
                 .padding(.vertical, 4)
             }
             .frame(height: 54)
-            .onChange(of: triageState.currentIndex) { _ in
+            .onAppear {
+                proxy.scrollTo(triageState.currentIndex, anchor: .center)
+            }
+            .onChange(of: triageState.currentIndex) { newIndex in
                 withAnimation(.easeInOut(duration: 0.2)) {
-                    proxy.scrollTo(triageState.currentIndex, anchor: .center)
+                    proxy.scrollTo(newIndex, anchor: .center)
                 }
             }
         }
@@ -54,9 +58,11 @@ struct FilmstripThumbnailItem: View {
     @State private var thumbnailImage: UIImage? = nil
 
     var body: some View {
+        let displayImage = thumbnailImage ?? photoKitManager.cachedThumbnail(for: asset)
+
         ZStack(alignment: .topTrailing) {
             Group {
-                if let image = thumbnailImage {
+                if let image = displayImage {
                     Image(platformImage: image)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
@@ -83,6 +89,10 @@ struct FilmstripThumbnailItem: View {
             }
         }
         .task(id: asset.id) {
+            if let cached = photoKitManager.cachedThumbnail(for: asset) {
+                thumbnailImage = cached
+                return
+            }
             thumbnailImage = await photoKitManager.loadThumbnail(
                 for: asset,
                 size: CGSize(width: 88, height: 88)

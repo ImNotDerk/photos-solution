@@ -84,8 +84,17 @@ public final class PhotoKitManager: ObservableObject {
     @Published public var isLoading: Bool = false
     @Published public var errorMessage: String? = nil
 
+    private let thumbnailCache = NSCache<NSString, UIImage>()
+    private let imageManager = PHCachingImageManager()
+
     public init() {
         self.authorizationStatus = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+        self.thumbnailCache.countLimit = 500
+    }
+
+    /// Synchronously retrieves a cached thumbnail if already in memory, enabling 0ms frame-1 rendering.
+    public func cachedThumbnail(for asset: TriageAsset) -> UIImage? {
+        thumbnailCache.object(forKey: asset.id as NSString)
     }
 
     /// Checks if the application has photo library read/write authorization.
@@ -209,25 +218,33 @@ public final class PhotoKitManager: ObservableObject {
 
     // MARK: - Image Loading
 
-    /// Loads a thumbnail image for grid or single view display.
-    /// Defers resuming until the final non-degraded image is provided by PhotoKit.
+    /// Loads a thumbnail image for grid or single view display with in-memory caching.
     public func loadThumbnail(
         for asset: TriageAsset,
         size: CGSize = CGSize(width: 320, height: 320)
     ) async -> UIImage? {
+        let cacheKey = asset.id as NSString
+        if let cached = thumbnailCache.object(forKey: cacheKey) {
+            return cached
+        }
+
+        let targetWidth = max(size.width, 160)
+        let targetHeight = max(size.height, 160)
+        let safeSize = CGSize(width: targetWidth, height: targetHeight)
+
         let options = PHImageRequestOptions()
-        options.deliveryMode = .highQualityFormat
+        options.deliveryMode = .opportunistic
         options.isNetworkAccessAllowed = true
         options.isSynchronous = false
 
         return await withCheckedContinuation { continuation in
             let box = StateBox()
-            _ = PHImageManager.default().requestImage(
+            _ = imageManager.requestImage(
                 for: asset.phAsset,
-                targetSize: size,
+                targetSize: safeSize,
                 contentMode: .aspectFill,
                 options: options
-            ) { image, info in
+            ) { [weak self] image, info in
                 if let cancelled = info?[PHImageCancelledKey] as? Bool, cancelled {
                     if box.tryResume() {
                         continuation.resume(returning: nil)
@@ -240,10 +257,19 @@ public final class PhotoKitManager: ObservableObject {
                     }
                     return
                 }
-                // If this is a degraded low-res placeholder, wait for the final high-quality render
+
+                if let img = image {
+                    self?.thumbnailCache.setObject(img, forKey: cacheKey)
+                }
+
                 if let isDegraded = info?[PHImageResultIsDegradedKey] as? Bool, isDegraded {
+                    // For ultra-responsive rendering, deliver degraded preview immediately if non-nil
+                    if let img = image, box.tryResume() {
+                        continuation.resume(returning: img)
+                    }
                     return
                 }
+
                 if box.tryResume() {
                     continuation.resume(returning: image)
                 }

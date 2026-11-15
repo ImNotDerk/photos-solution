@@ -663,31 +663,56 @@ public struct AssetSlideView: View {
     }
 
     public var body: some View {
+        let displayImage = slideImage ?? (asset.flatMap { photoKitManager.cachedThumbnail(for: $0) })
+
         ZStack {
             Color.black
-            if let img = slideImage {
+            if let img = displayImage {
                 Image(platformImage: img)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
-                    .frame(width: size.width, height: size.height)
+                    .frame(width: max(size.width, 1), height: max(size.height, 1))
                     .scaleEffect(isCenter ? zoomScale : 1.0)
                     .offset(y: isCenter ? verticalOffset : 0)
             } else if asset != nil {
                 ProgressView().tint(.white)
             }
         }
-        .frame(width: size.width, height: size.height)
+        .frame(width: max(size.width, 1), height: max(size.height, 1))
         .clipped()
         .task(id: asset?.id) {
             guard let asset = asset else {
                 slideImage = nil
                 return
             }
+            if let cached = photoKitManager.cachedThumbnail(for: asset) {
+                slideImage = cached
+            }
             isLoading = true
-            let loaded = await photoKitManager.loadThumbnail(for: asset, size: CGSize(width: size.width * 2, height: size.height * 2))
+            let targetW = size.width > 0 ? size.width * 2 : 1000
+            let targetH = size.height > 0 ? size.height * 2 : 1000
+            let loaded = await photoKitManager.loadThumbnail(for: asset, size: CGSize(width: targetW, height: targetH))
             await MainActor.run {
-                self.slideImage = loaded
+                if let loaded = loaded {
+                    self.slideImage = loaded
+                }
                 self.isLoading = false
+            }
+        }
+        .onChange(of: size.width) { newWidth in
+            if newWidth > 0 && slideImage == nil && !isLoading, let asset = asset {
+                Task {
+                    isLoading = true
+                    let targetW = newWidth * 2
+                    let targetH = (size.height > 0 ? size.height : newWidth) * 2
+                    let loaded = await photoKitManager.loadThumbnail(for: asset, size: CGSize(width: targetW, height: targetH))
+                    await MainActor.run {
+                        if let loaded = loaded {
+                            self.slideImage = loaded
+                        }
+                        self.isLoading = false
+                    }
+                }
             }
         }
     }
