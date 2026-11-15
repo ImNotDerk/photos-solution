@@ -12,19 +12,19 @@ public enum TriageAppTab: String, CaseIterable, Identifiable, Sendable {
 
     public var title: String {
         switch self {
-        case .single: return "SINGLE"
-        case .grid: return "GRID"
-        case .backup: return "BACKUP"
-        case .settings: return "SETTINGS"
+        case .single: return "Triage"
+        case .grid: return "Library"
+        case .backup: return "Backup"
+        case .settings: return "Settings"
         }
     }
 
     public var iconName: String {
         switch self {
-        case .single: return "rectangle.fill.on.rectangle.fill"
-        case .grid: return "square.grid.2x2"
+        case .single: return "photo.fill.on.rectangle.fill"
+        case .grid: return "square.grid.2x2.fill"
         case .backup: return "externaldrive.badge.icloud"
-        case .settings: return "slider.horizontal.3"
+        case .settings: return "gearshape.fill"
         }
     }
 }
@@ -110,85 +110,83 @@ public struct ContentView: View {
     private var globalHeaderBar: some View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
-                // Month Selector Button (Comfortable 44pt Touch Target)
+                // Month Selector Button (Apple Capsule Style)
                 Button {
                     triggerHapticFeedback(0)
                     showingMonthSheet = true
                 } label: {
-                    HStack(spacing: 8) {
+                    HStack(spacing: 6) {
                         Image(systemName: "calendar")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundColor(.consoleCyan)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.blue)
 
                         Text(triageState.selectedMonth?.displayName ?? "SELECT MONTH")
-                            .font(.system(size: 14, weight: .bold, design: .rounded))
-                            .foregroundColor(.slate100)
+                            .font(.system(size: 14, weight: .semibold, design: .rounded))
+                            .foregroundColor(.white)
 
                         Image(systemName: "chevron.down")
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundColor(.slate400)
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(.white.opacity(0.6))
                     }
                     .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(Color.slate800)
-                    .cornerRadius(10)
-                    .utilitarianBorder(color: .slate700, width: 1, cornerRadius: 10)
+                    .padding(.vertical, 7)
+                    .background(Color.white.opacity(0.12))
+                    .clipShape(Capsule())
                 }
 
                 Spacer()
 
-                // Progress Indicator
+                // Progress Indicator (Apple Style)
                 if triageState.totalCount > 0 {
-                    VStack(alignment: .trailing, spacing: 3) {
-                        HStack(spacing: 4) {
+                    HStack(spacing: 8) {
+                        VStack(alignment: .trailing, spacing: 2) {
                             Text("\(triageState.triagedCount)/\(triageState.totalCount)")
-                                .font(.system(size: 13, weight: .bold, design: .monospaced))
-                                .foregroundColor(.slate100)
+                                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                                .foregroundColor(.white)
 
                             Text("(\(Int(triageState.progressPercentage * 100))%)")
-                                .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                                .foregroundColor(.consoleCyan)
+                                .font(.system(size: 10, weight: .regular, design: .monospaced))
+                                .foregroundColor(.white.opacity(0.6))
                         }
 
-                        // Smooth Mini Progress Bar
+                        // Smooth Apple Mini Progress Bar
                         ZStack(alignment: .leading) {
                             Capsule()
-                                .fill(Color.slate800)
-                                .frame(width: 80, height: 4)
+                                .fill(Color.white.opacity(0.15))
+                                .frame(width: 50, height: 4)
 
                             Capsule()
-                                .fill(Color.consoleCyan)
-                                .frame(width: max(4, 80 * CGFloat(triageState.progressPercentage)), height: 4)
+                                .fill(Color.blue)
+                                .frame(width: max(4, 50 * CGFloat(triageState.progressPercentage)), height: 4)
                         }
                     }
-                    .padding(.horizontal, 8)
+                    .padding(.horizontal, 10)
                     .padding(.vertical, 6)
-                    .background(Color.slate900)
-                    .cornerRadius(8)
-                    .utilitarianBorder(color: .slate800, width: 1, cornerRadius: 8)
+                    .background(Color.white.opacity(0.08))
+                    .clipShape(Capsule())
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.top, 10)
+            .padding(.top, 8)
             .padding(.bottom, 8)
 
-            // 1px Divider
+            // Apple Hairline Divider
             Rectangle()
-                .fill(Color.slate800)
-                .frame(height: 1)
+                .fill(Color.white.opacity(0.12))
+                .frame(height: 0.5)
         }
-        .background(Color.slate900)
+        .background(Color(red: 0.08, green: 0.08, blue: 0.09).opacity(0.95))
     }
 
-    // MARK: - Segmented Navigation Bar
+    // MARK: - Native Apple Tab Bar
 
     private var segmentedNavigationBar: some View {
         VStack(spacing: 0) {
             Rectangle()
-                .fill(Color.slate800)
-                .frame(height: 1)
+                .fill(Color.white.opacity(0.12))
+                .frame(height: 0.5)
 
-            HStack(spacing: 8) {
+            HStack(spacing: 0) {
                 ForEach(TriageAppTab.allCases) { tab in
                     let isSelected = (selectedTab == tab)
 
@@ -196,27 +194,24 @@ public struct ContentView: View {
                         triggerHapticFeedback(0)
                         selectedTab = tab
                     } label: {
-                        VStack(spacing: 4) {
+                        VStack(spacing: 3) {
                             Image(systemName: tab.iconName)
-                                .font(.system(size: 18, weight: isSelected ? .bold : .medium))
+                                .font(.system(size: 19, weight: isSelected ? .semibold : .regular))
 
                             Text(tab.title)
-                                .font(.system(size: 10, weight: isSelected ? .bold : .medium, design: .rounded))
+                                .font(.system(size: 10, weight: isSelected ? .semibold : .medium))
                         }
-                        .foregroundColor(isSelected ? .consoleCyan : .slate400)
+                        .foregroundColor(isSelected ? .blue : .white.opacity(0.5))
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
-                        .background(isSelected ? Color.slate800 : Color.clear)
-                        .cornerRadius(10)
-                        .utilitarianBorder(color: isSelected ? .consoleCyan.opacity(0.6) : .clear, width: 1, cornerRadius: 10)
+                        .padding(.top, 6)
+                        .padding(.bottom, 6)
                     }
                     .buttonStyle(.plain)
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.top, 6)
-            .padding(.bottom, 12) // Extra padding for iPhone home indicator
-            .background(Color.slate950)
+            .padding(.horizontal, 8)
+            .padding(.bottom, 12) // Inset for iPhone home indicator
+            .background(Color(red: 0.08, green: 0.08, blue: 0.09).opacity(0.95))
         }
     }
 }
