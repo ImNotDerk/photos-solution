@@ -1,5 +1,6 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import * as os from 'os';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import exifr from 'exifr';
@@ -368,4 +369,67 @@ export async function scanStagingDirectory(stagingDir: string): Promise<AssetBun
   bundles.sort((a, b) => a.capturedAt.localeCompare(b.capturedAt) || a.canonicalName.localeCompare(b.canonicalName));
 
   return bundles;
+}
+
+/**
+ * Scans ~/Downloads for media files modified in the past maxAgeHours (defaults to 72 hours),
+ * or within AirDrop subfolders, and copies them into the staging directory.
+ */
+export async function importFromDownloads(
+  downloadsDir = path.join(os.homedir(), 'Downloads'),
+  targetStagingDir: string,
+  maxAgeHours = 72
+): Promise<{ importedCount: number; filenames: string[] }> {
+  await fs.mkdir(targetStagingDir, { recursive: true });
+  let entries: import('fs').Dirent[] = [];
+  try {
+    entries = await fs.readdir(downloadsDir, { withFileTypes: true });
+  } catch {
+    return { importedCount: 0, filenames: [] };
+  }
+
+  const now = Date.now();
+  const maxAgeMs = maxAgeHours * 60 * 60 * 1000;
+  const imported: string[] = [];
+
+  for (const entry of entries) {
+    if (entry.name.startsWith('.')) continue;
+    const fullPath = path.join(downloadsDir, entry.name);
+
+    if (entry.isFile()) {
+      const ext = path.extname(entry.name).toLowerCase();
+      if (IMAGE_EXTENSIONS.has(ext) || VIDEO_EXTENSIONS.has(ext) || ext === '.aae') {
+        try {
+          const stat = await fs.stat(fullPath);
+          if (now - stat.mtimeMs <= maxAgeMs) {
+            const dest = path.join(targetStagingDir, entry.name);
+            await fs.copyFile(fullPath, dest);
+            imported.push(entry.name);
+          }
+        } catch {
+          // Ignore individual copy failures
+        }
+      }
+    } else if (entry.isDirectory() && (/^airdrop/i.test(entry.name) || /^item/i.test(entry.name))) {
+      try {
+        const subEntries = await fs.readdir(fullPath, { withFileTypes: true });
+        for (const sub of subEntries) {
+          if (sub.isFile()) {
+            const ext = path.extname(sub.name).toLowerCase();
+            if (IMAGE_EXTENSIONS.has(ext) || VIDEO_EXTENSIONS.has(ext) || ext === '.aae') {
+              const destDir = path.join(targetStagingDir, entry.name);
+              await fs.mkdir(destDir, { recursive: true });
+              const dest = path.join(destDir, sub.name);
+              await fs.copyFile(path.join(fullPath, sub.name), dest);
+              imported.push(`${entry.name}/${sub.name}`);
+            }
+          }
+        }
+      } catch {
+        // Ignore subfolder errors
+      }
+    }
+  }
+
+  return { importedCount: imported.length, filenames: imported };
 }

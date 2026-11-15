@@ -11,6 +11,8 @@ export interface SingleViewProps {
   onNext?: () => void;
   onUndo?: () => void;
   canUndo?: boolean;
+  onImportDownloads?: () => void;
+  isImporting?: boolean;
 }
 
 export function formatBytes(bytes: number): string {
@@ -42,6 +44,8 @@ export const SingleView: React.FC<SingleViewProps> = ({
   onNext,
   onUndo,
   canUndo = false,
+  onImportDownloads,
+  isImporting = false,
 }) => {
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
   const touchCurrentRef = useRef<{ x: number; y: number } | null>(null);
@@ -85,9 +89,37 @@ export const SingleView: React.FC<SingleViewProps> = ({
 
   if (!bundle) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[400px] border border-slate-700 bg-slate-900 text-slate-400 p-8">
-        <span className="font-mono text-sm tracking-wider uppercase mb-2">No Active Asset</span>
-        <p className="text-xs text-slate-500">Staging folder is empty or all items have been triaged.</p>
+      <div className="flex flex-col items-center justify-center min-h-[460px] border border-slate-700 bg-slate-900 text-slate-400 p-6 text-center space-y-4">
+        <div className="w-12 h-12 border border-slate-700 bg-slate-950 flex items-center justify-center text-indigo-400 font-mono text-lg font-bold">
+          [!]
+        </div>
+        <div className="space-y-1">
+          <span className="font-mono text-sm tracking-wider uppercase font-bold text-slate-200 block">
+            Staging Folder Is Empty
+          </span>
+          <p className="text-xs text-slate-400 max-w-xs mx-auto">
+            Safari on your iPhone cannot read your Camera Roll directly. You need to AirDrop your photos to your Mac first.
+          </p>
+        </div>
+
+        <div className="w-full max-w-xs p-3 border border-slate-800 bg-slate-950 text-left text-xs space-y-2">
+          <span className="font-bold text-[11px] text-slate-300 uppercase tracking-wider block">How to Load Photos:</span>
+          <ol className="list-decimal list-inside space-y-1.5 text-[11px] text-slate-400">
+            <li>Open <strong>Apple Photos</strong> on your iPhone.</li>
+            <li>Select your photos and tap <strong>Share → AirDrop → Your Mac</strong>.</li>
+            <li>Tap the button below to import from your Mac:</li>
+          </ol>
+        </div>
+
+        {onImportDownloads && (
+          <button
+            onClick={onImportDownloads}
+            disabled={isImporting}
+            className="w-full max-w-xs py-3 px-4 border border-indigo-500 bg-indigo-950 hover:bg-indigo-900 active:bg-indigo-800 disabled:opacity-50 text-indigo-200 text-xs font-bold uppercase tracking-wider transition-colors flex items-center justify-center gap-2"
+          >
+            {isImporting ? 'Importing from Downloads...' : '📥 Import Latest AirDrop from Downloads'}
+          </button>
+        )}
       </div>
     );
   }

@@ -45,6 +45,7 @@ export const App: React.FC = () => {
   const [activeFilter, setActiveFilter] = useState<SortFilter>('all');
   const [undoStack, setUndoStack] = useState<UndoItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isImporting, setIsImporting] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [infoMsg, setInfoMsg] = useState<string | null>(null);
   const [activityLogs, setActivityLogs] = useState<string[]>([
@@ -275,6 +276,30 @@ export const App: React.FC = () => {
     }
   };
 
+  // Import recent AirDrop media from ~/Downloads
+  const handleImportDownloads = async () => {
+    setIsImporting(true);
+    setErrorMsg(null);
+    try {
+      const res = await fetch('/api/import-downloads', { method: 'POST' });
+      if (!res.ok) {
+        throw new Error(`Failed to import from Downloads: HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      setSessionState(data);
+      addLog(`INGEST: Imported ${data.importedCount || 0} file(s) from Downloads`);
+      if (data.importedCount > 0) {
+        setInfoMsg(`Imported ${data.importedCount} new photo(s) from Downloads!`);
+      } else {
+        setInfoMsg('No new photos found in ~/Downloads. AirDrop your photos to your Mac first.');
+      }
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Failed to import from Downloads');
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
   // Selection helpers
   const handleToggleSelect = (id: string) => {
     setSelectedIds((prev) => {
@@ -394,6 +419,8 @@ export const App: React.FC = () => {
             onNext={() => setCurrentIndex((prev) => Math.min(sessionState.bundles.length - 1, prev + 1))}
             onUndo={handleUndo}
             canUndo={undoStack.length > 0}
+            onImportDownloads={handleImportDownloads}
+            isImporting={isImporting}
           />
         )}
 

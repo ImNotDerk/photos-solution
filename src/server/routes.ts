@@ -14,7 +14,7 @@ import type {
   TriageUpdateRequest,
 } from '../types/index.js';
 import { generateCleanupPayload } from './cleanup.js';
-import { scanStagingDirectory } from './ingest.js';
+import { scanStagingDirectory, importFromDownloads } from './ingest.js';
 import { checkDuplicates, loadLedger, LEDGER_BACKUP_DIR, LEDGER_BACKUP_FILENAME } from './ledger.js';
 import { executeBackup } from './backup.js';
 
@@ -188,9 +188,19 @@ export const routes: FastifyPluginAsync<RoutesOptions> = async (
     manager.setState({ hardDriveMounted });
 
     // Scan staging if explicitly requested or if stagingDir is set but bundles are empty
-    if ((scan === 'true' || scan === true) && currentState.stagingDir) {
+    if (((scan === 'true' || scan === true) || currentState.bundles.length === 0) && currentState.stagingDir) {
       try {
         let bundles = await scanStagingDirectory(currentState.stagingDir);
+
+        // If staging directory is currently empty, try importing recent media from ~/Downloads
+        if (bundles.length === 0) {
+          try {
+            await importFromDownloads(undefined, currentState.stagingDir);
+            bundles = await scanStagingDirectory(currentState.stagingDir);
+          } catch {
+            // Ignore non-critical import failures
+          }
+        }
 
         if (currentState.hardDriveRoot && hardDriveMounted) {
           const ledger = await loadLedger(currentState.hardDriveRoot);
@@ -212,6 +222,42 @@ export const routes: FastifyPluginAsync<RoutesOptions> = async (
       ...manager.getState(),
       hardDriveMounted,
     });
+  });
+
+  /**
+   * POST /api/import-downloads
+   * Imports recent media files from ~/Downloads into the staging directory and rescans.
+   */
+  fastify.post('/api/import-downloads', async (request, reply) => {
+    const currentState = manager.getState();
+    if (!currentState.stagingDir) {
+      return reply.status(400).send({ error: 'No staging directory configured' });
+    }
+
+    try {
+      const { importedCount, filenames } = await importFromDownloads(undefined, currentState.stagingDir);
+      let bundles = await scanStagingDirectory(currentState.stagingDir);
+      const hardDriveMounted = await isHardDriveMounted(currentState.hardDriveRoot);
+      if (currentState.hardDriveRoot && hardDriveMounted) {
+        const ledger = await loadLedger(currentState.hardDriveRoot);
+        bundles = await checkDuplicates(bundles, ledger, currentState.hardDriveRoot);
+      }
+      const updated = manager.setState({
+        bundles,
+        status: 'triaging',
+        hardDriveMounted,
+      });
+
+      return reply.status(200).send({
+        importedCount,
+        filenames,
+        ...updated,
+      });
+    } catch (err: any) {
+      return reply.status(500).send({
+        error: `Failed to import from Downloads: ${err.message}`,
+      });
+    }
   });
 
   /**
