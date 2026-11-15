@@ -350,7 +350,7 @@ public final class PhotoKitManager: ObservableObject {
         }
 
         // Ensure primary was successfully assigned
-        guard assigned.contains(where: { $0.role == .primary }) else {
+        if !assigned.contains(where: { $0.role == .primary }) {
             if let fallback = allResources.first {
                 assigned.append((fallback, .primary))
             } else {
