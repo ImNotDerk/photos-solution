@@ -6,6 +6,21 @@ import UIKit
 import AppKit
 #endif
 
+/// Represents a calendar day grouping of triage assets.
+public struct DailyAssetSection: Identifiable, Sendable {
+    public let id: String
+    public let date: Date
+    public let title: String
+    public let assets: [TriageAsset]
+
+    public init(id: String, date: Date, title: String, assets: [TriageAsset]) {
+        self.id = id
+        self.date = date
+        self.title = title
+        self.assets = assets
+    }
+}
+
 /// Utilitarian Grid Triage View
 /// Provides a high-density thumbnail grid with status badges, category filtering,
 /// and batch multi-selection for bulk triage operations.
@@ -23,12 +38,39 @@ public struct GridTriageView: View {
         GridItem(.adaptive(minimum: 96, maximum: 120), spacing: 4)
     ]
 
+    private static let dayHeaderFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEEE, MMM d, yyyy"
+        return formatter
+    }()
+
     public init(onAssetSelected: ((TriageAsset) -> Void)? = nil) {
         self.onAssetSelected = onAssetSelected
     }
 
     public var displayAssets: [TriageAsset] {
         triageState.filteredAssets(filter: currentFilter)
+    }
+
+    public func groupedDailySections(for assets: [TriageAsset]) -> [DailyAssetSection] {
+        guard !assets.isEmpty else { return [] }
+
+        let calendar = Calendar.current
+        var dict: [Date: [TriageAsset]] = [:]
+
+        for asset in assets {
+            let dayDate = calendar.startOfDay(for: asset.creationDate ?? Date())
+            dict[dayDate, default: []].append(asset)
+        }
+
+        let sortedDays = dict.keys.sorted(by: >)
+
+        return sortedDays.compactMap { dayDate in
+            guard let dayAssets = dict[dayDate], !dayAssets.isEmpty else { return nil }
+            let id = String(Int(dayDate.timeIntervalSince1970))
+            let title = Self.dayHeaderFormatter.string(from: dayDate)
+            return DailyAssetSection(id: id, date: dayDate, title: title, assets: dayAssets)
+        }
     }
 
     public var body: some View {
