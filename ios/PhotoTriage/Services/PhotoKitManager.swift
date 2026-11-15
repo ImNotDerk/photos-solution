@@ -10,6 +10,38 @@ import UIKit
 import AppKit
 #endif
 
+// MARK: - Thread Safety Helpers
+
+private final class StateBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = false
+
+    func tryResume() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        if value { return false }
+        value = true
+        return true
+    }
+}
+
+private final class BufferBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var data = Data()
+
+    func append(_ chunk: Data) {
+        lock.lock()
+        data.append(chunk)
+        lock.unlock()
+    }
+
+    func getData() -> Data {
+        lock.lock()
+        defer { lock.unlock() }
+        return data
+    }
+}
+
 // MARK: - PhotoKit Error
 
 public enum PhotoKitError: LocalizedError, Equatable {
@@ -52,8 +84,6 @@ public final class PhotoKitManager: ObservableObject {
     @Published public var isLoading: Bool = false
     @Published public var errorMessage: String? = nil
 
-    private let resourceQueue = DispatchQueue(label: "com.phototriage.resource-extractor", qos: .userInitiated)
-
     public init() {
         self.authorizationStatus = PHPhotoLibrary.authorizationStatus(for: .readWrite)
     }
@@ -66,9 +96,16 @@ public final class PhotoKitManager: ObservableObject {
 
     // MARK: - Authorization
 
-    /// Prompts the user for PhotoKit read-write authorization.
+    /// Prompts the user for PhotoKit read-write authorization and returns boolean success.
     @discardableResult
-    public func requestAuthorization() async -> PHAuthorizationStatus {
+    public func requestAuthorization() async -> Bool {
+        let status = await requestAuthorizationStatus()
+        return status == .authorized || status == .limited
+    }
+
+    /// Requests authorization and returns the full `PHAuthorizationStatus` enum.
+    @discardableResult
+    public func requestAuthorizationStatus() async -> PHAuthorizationStatus {
         let status = await withCheckedContinuation { continuation in
             PHPhotoLibrary.requestAuthorization(for: .readWrite) { newStatus in
                 continuation.resume(returning: newStatus)
@@ -78,16 +115,10 @@ public final class PhotoKitManager: ObservableObject {
         return status
     }
 
-    /// Convenience authorization method returning boolean success.
-    @discardableResult
-    public func requestAuthorizationBool() async -> Bool {
-        let status = await requestAuthorization()
-        return status == .authorized || status == .limited
-    }
-
     // MARK: - Fetch Months
 
-    /// Scans the entire Camera Roll and groups assets by calendar Year and Month.
+    /// Scans the Camera Roll and groups assets by calendar Year and Month.
+    /// Runs aggregation off the MainActor in a detached background task to prevent UI hitching.
     /// Returns groups sorted in descending order (most recent month first).
     @discardableResult
     public func fetchMonths() async -> [YearMonthGroup] {
@@ -95,40 +126,42 @@ public final class PhotoKitManager: ObservableObject {
         errorMessage = nil
         defer { isLoading = false }
 
-        let options = PHFetchOptions()
-        options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
-        options.predicate = NSPredicate(
-            format: "mediaType == %d OR mediaType == %d",
-            PHAssetMediaType.image.rawValue,
-            PHAssetMediaType.video.rawValue
-        )
+        let sortedGroups = await Task.detached(priority: .userInitiated) { () -> [YearMonthGroup] in
+            let options = PHFetchOptions()
+            options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
+            options.predicate = NSPredicate(
+                format: "mediaType == %d OR mediaType == %d",
+                PHAssetMediaType.image.rawValue,
+                PHAssetMediaType.video.rawValue
+            )
 
-        let fetchResult = PHAsset.fetchAssets(with: options)
-        let calendar = Calendar.current
-        var monthCounts: [String: (group: YearMonthGroup, count: Int)] = [:]
+            let fetchResult = PHAsset.fetchAssets(with: options)
+            let calendar = Calendar.current
+            var monthCounts: [String: (group: YearMonthGroup, count: Int)] = [:]
 
-        for i in 0..<fetchResult.count {
-            let asset = fetchResult.object(at: i)
-            guard let date = asset.creationDate else { continue }
-            let year = calendar.component(.year, from: date)
-            let month = calendar.component(.month, from: date)
-            let key = String(format: "%04d-%02d", year, month)
-            if var existing = monthCounts[key] {
-                existing.count += 1
-                monthCounts[key] = existing
-            } else {
-                monthCounts[key] = (YearMonthGroup(year: year, month: month, assetCount: 1), 1)
-            }
-        }
-
-        let sortedGroups = monthCounts.values
-            .map { YearMonthGroup(year: $0.group.year, month: $0.group.month, assetCount: $0.count) }
-            .sorted { lhs, rhs in
-                if lhs.year != rhs.year {
-                    return lhs.year > rhs.year
+            for i in 0..<fetchResult.count {
+                let asset = fetchResult.object(at: i)
+                guard let date = asset.creationDate else { continue }
+                let year = calendar.component(.year, from: date)
+                let month = calendar.component(.month, from: date)
+                let key = String(format: "%04d-%02d", year, month)
+                if var existing = monthCounts[key] {
+                    existing.count += 1
+                    monthCounts[key] = existing
+                } else {
+                    monthCounts[key] = (YearMonthGroup(year: year, month: month, assetCount: 1), 1)
                 }
-                return lhs.month > rhs.month
             }
+
+            return monthCounts.values
+                .map { YearMonthGroup(year: $0.group.year, month: $0.group.month, assetCount: $0.count) }
+                .sorted { lhs, rhs in
+                    if lhs.year != rhs.year {
+                        return lhs.year > rhs.year
+                    }
+                    return lhs.month > rhs.month
+                }
+        }.value
 
         self.months = sortedGroups
         return sortedGroups
@@ -177,6 +210,7 @@ public final class PhotoKitManager: ObservableObject {
     // MARK: - Image Loading
 
     /// Loads a thumbnail image for grid or single view display.
+    /// Defers resuming until the final non-degraded image is provided by PhotoKit.
     public func loadThumbnail(
         for asset: TriageAsset,
         size: CGSize = CGSize(width: 320, height: 320)
@@ -187,21 +221,38 @@ public final class PhotoKitManager: ObservableObject {
         options.isSynchronous = false
 
         return await withCheckedContinuation { continuation in
-            var hasResumed = false
-            PHImageManager.default().requestImage(
+            let box = StateBox()
+            _ = PHImageManager.default().requestImage(
                 for: asset.phAsset,
                 targetSize: size,
                 contentMode: .aspectFill,
                 options: options
-            ) { image, _ in
-                guard !hasResumed else { return }
-                hasResumed = true
-                continuation.resume(returning: image)
+            ) { image, info in
+                if let cancelled = info?[PHImageCancelledKey] as? Bool, cancelled {
+                    if box.tryResume() {
+                        continuation.resume(returning: nil)
+                    }
+                    return
+                }
+                if info?[PHImageErrorKey] != nil {
+                    if box.tryResume() {
+                        continuation.resume(returning: nil)
+                    }
+                    return
+                }
+                // If this is a degraded low-res placeholder, wait for the final high-quality render
+                if let isDegraded = info?[PHImageResultIsDegradedKey] as? Bool, isDegraded {
+                    return
+                }
+                if box.tryResume() {
+                    continuation.resume(returning: image)
+                }
             }
         }
     }
 
     /// Loads the full-resolution image for single triage view inspection.
+    /// Defers resuming until the final non-degraded full-res image is rendered.
     public func loadFullImage(for asset: TriageAsset) async -> UIImage? {
         let options = PHImageRequestOptions()
         options.deliveryMode = .highQualityFormat
@@ -209,16 +260,32 @@ public final class PhotoKitManager: ObservableObject {
         options.isSynchronous = false
 
         return await withCheckedContinuation { continuation in
-            var hasResumed = false
-            PHImageManager.default().requestImage(
+            let box = StateBox()
+            _ = PHImageManager.default().requestImage(
                 for: asset.phAsset,
                 targetSize: PHImageManagerMaximumSize,
                 contentMode: .aspectFit,
                 options: options
-            ) { image, _ in
-                guard !hasResumed else { return }
-                hasResumed = true
-                continuation.resume(returning: image)
+            ) { image, info in
+                if let cancelled = info?[PHImageCancelledKey] as? Bool, cancelled {
+                    if box.tryResume() {
+                        continuation.resume(returning: nil)
+                    }
+                    return
+                }
+                if info?[PHImageErrorKey] != nil {
+                    if box.tryResume() {
+                        continuation.resume(returning: nil)
+                    }
+                    return
+                }
+                // If this is a degraded placeholder, wait for the final high-quality image
+                if let isDegraded = info?[PHImageResultIsDegradedKey] as? Bool, isDegraded {
+                    return
+                }
+                if box.tryResume() {
+                    continuation.resume(returning: image)
+                }
             }
         }
     }
@@ -230,6 +297,9 @@ public final class PhotoKitManager: ObservableObject {
     /// - Live Photo companion video (optional)
     /// - Adjustment sidecar (.AAE) (optional)
     /// - Edited full-size render (optional)
+    ///
+    /// Video resources are streamed directly to temporary file URLs using `writeData(for:toFile:)`
+    /// to avoid RAM exhaustion and OOM crashes on large 4K files.
     public func extractResources(for asset: TriageAsset) async throws -> [ExtractedResource] {
         let phAsset = asset.phAsset
         let allResources = PHAssetResource.assetResources(for: phAsset)
@@ -290,7 +360,6 @@ public final class PhotoKitManager: ObservableObject {
 
         var extractedResources: [ExtractedResource] = []
         let resourceManager = PHAssetResourceManager.default()
-        let queue = self.resourceQueue
 
         for item in assigned {
             let res = item.resource
@@ -318,41 +387,82 @@ public final class PhotoKitManager: ObservableObject {
             let requestOptions = PHAssetResourceRequestOptions()
             requestOptions.isNetworkAccessAllowed = true
 
-            var buffer = Data()
-            do {
-                try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-                    var hasCompleted = false
-                    _ = resourceManager.requestData(
-                        for: res,
-                        options: requestOptions,
-                        dataReceivedHandler: { chunk in
-                            queue.sync {
-                                buffer.append(chunk)
-                            }
-                        },
-                        completionHandler: { error in
-                            guard !hasCompleted else { return }
-                            hasCompleted = true
+            // For video assets (Live Photo paired video, standalone video, edited video),
+            // stream directly to a temporary file to prevent memory exhaustion / OOM crashes.
+            let isVideoResource = (role == .liveVideo) ||
+                                  (role == .primary && asset.isVideo) ||
+                                  (role == .editedRender && asset.isVideo)
+
+            if isVideoResource {
+                let tempDir = FileManager.default.temporaryDirectory
+                let tempFileURL = tempDir.appendingPathComponent("\(UUID().uuidString)_\(filename)")
+                try? FileManager.default.removeItem(at: tempFileURL)
+
+                do {
+                    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                        let box = StateBox()
+                        resourceManager.writeData(
+                            for: res,
+                            toFile: tempFileURL,
+                            options: requestOptions
+                        ) { error in
+                            guard box.tryResume() else { return }
                             if let error = error {
                                 continuation.resume(throwing: error)
                             } else {
                                 continuation.resume()
                             }
                         }
-                    )
+                    }
+                } catch {
+                    throw PhotoKitError.resourceExtractionFailed("Resource '\(filename)' write to disk failed: \(error.localizedDescription)")
                 }
-            } catch {
-                throw PhotoKitError.resourceExtractionFailed("Resource '\(filename)' extraction failed: \(error.localizedDescription)")
-            }
 
-            extractedResources.append(
-                ExtractedResource(
-                    role: role,
-                    filename: filename,
-                    data: buffer,
-                    mimeType: mime
+                extractedResources.append(
+                    ExtractedResource(
+                        role: role,
+                        filename: filename,
+                        data: nil,
+                        fileURL: tempFileURL,
+                        mimeType: mime
+                    )
                 )
-            )
+            } else {
+                // For photos and XML sidecars, buffer in memory
+                let bufferBox = BufferBox()
+                do {
+                    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                        let box = StateBox()
+                        _ = resourceManager.requestData(
+                            for: res,
+                            options: requestOptions,
+                            dataReceivedHandler: { chunk in
+                                bufferBox.append(chunk)
+                            },
+                            completionHandler: { error in
+                                guard box.tryResume() else { return }
+                                if let error = error {
+                                    continuation.resume(throwing: error)
+                                } else {
+                                    continuation.resume()
+                                }
+                            }
+                        )
+                    }
+                } catch {
+                    throw PhotoKitError.resourceExtractionFailed("Resource '\(filename)' extraction failed: \(error.localizedDescription)")
+                }
+
+                extractedResources.append(
+                    ExtractedResource(
+                        role: role,
+                        filename: filename,
+                        data: bufferBox.getData(),
+                        fileURL: nil,
+                        mimeType: mime
+                    )
+                )
+            }
         }
 
         return extractedResources

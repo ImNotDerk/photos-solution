@@ -135,14 +135,33 @@ public enum ResourceRole: String, Codable, CaseIterable, Identifiable, Sendable 
 
 // MARK: - Extracted Resource
 
-/// An in-memory resource extracted via `PHAssetResourceManager` ready for multipart upload.
+/// An in-memory or on-disk resource extracted via `PHAssetResourceManager` ready for multipart upload.
+/// Supports streaming via `fileURL` for large video assets to prevent RAM exhaustion.
 public struct ExtractedResource: Identifiable, Sendable, Equatable, Hashable {
     public let id: UUID
     public let role: ResourceRole
     public let filename: String
-    public let data: Data
+    public let data: Data?
+    public let fileURL: URL?
     public let mimeType: String
 
+    public init(
+        id: UUID = UUID(),
+        role: ResourceRole,
+        filename: String,
+        data: Data? = nil,
+        fileURL: URL? = nil,
+        mimeType: String
+    ) {
+        self.id = id
+        self.role = role
+        self.filename = filename
+        self.data = data
+        self.fileURL = fileURL
+        self.mimeType = mimeType
+    }
+
+    /// Convenience initializer for in-memory data.
     public init(
         id: UUID = UUID(),
         role: ResourceRole,
@@ -150,11 +169,25 @@ public struct ExtractedResource: Identifiable, Sendable, Equatable, Hashable {
         data: Data,
         mimeType: String
     ) {
-        self.id = id
-        self.role = role
-        self.filename = filename
-        self.data = data
-        self.mimeType = mimeType
+        self.init(id: id, role: role, filename: filename, data: data, fileURL: nil, mimeType: mimeType)
+    }
+
+    /// Reads resource bytes either from in-memory buffer or from disk stream.
+    public func loadData() throws -> Data {
+        if let data = data {
+            return data
+        }
+        if let fileURL = fileURL {
+            return try Data(contentsOf: fileURL)
+        }
+        return Data()
+    }
+
+    /// Clean up any temporary file created on disk.
+    public func cleanup() {
+        if let fileURL = fileURL {
+            try? FileManager.default.removeItem(at: fileURL)
+        }
     }
 }
 
@@ -228,8 +261,8 @@ public struct TriageAsset: Identifiable, Hashable, Equatable, @unchecked Sendabl
     public var formattedSize: String
     public let formattedDuration: String?
 
-    // Shared formatters
-    private static let isoDateFormatter: ISO8601DateFormatter = {
+    // Concurrency-safe formatters for Swift 6
+    nonisolated(unsafe) private static let isoDateFormatter: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return formatter
@@ -285,14 +318,10 @@ public struct TriageAsset: Identifiable, Hashable, Equatable, @unchecked Sendabl
             self.formattedDuration = nil
         }
 
-        // Determine canonicalName and originalFilename
+        // Fast filename resolution: avoid synchronous PHAssetResource database lookup during batch listing
         var resolvedOriginalName = originalFilename
         if resolvedOriginalName == nil {
-            let resources = PHAssetResource.assetResources(for: asset)
-            if let primaryRes = resources.first(where: { $0.type == .photo || $0.type == .video }) ?? resources.first,
-               !primaryRes.originalFilename.isEmpty {
-                resolvedOriginalName = primaryRes.originalFilename
-            }
+            resolvedOriginalName = asset.value(forKey: "filename") as? String
         }
         self.originalFilename = resolvedOriginalName
 
