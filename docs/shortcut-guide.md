@@ -37,16 +37,18 @@ flowchart TD
 
 Open the **Shortcuts** app on your iPhone, tap **+** in the top right to create a new shortcut, and name it **`PhotoTriageCleanup`** (exact name is required for URL scheme integration).
 
-### Action 1: Get Contents of URL (Fetch Cleanup Batch)
+### Action 1: Receive Dynamic Cleanup URL & Fetch Batch
 
-1. Tap **Add Action**, search for **URL**, and select **URL**.
-   - If using the dynamic Shortcut Input from Safari: Set URL to `Shortcut Input` (or fallback text).
-   - Alternatively, enter your Mac's LAN IP address:
+1. Add a **URL** or **Text** action to resolve the cleanup endpoint:
+   - **Dynamic (Recommended):** The web app passes the cleanup URL dynamically via `Shortcut Input` (`shortcuts://run-shortcut?name=PhotoTriageCleanup&input=text&text=...`). Select **`Shortcut Input`** as the URL.
+   - **Fallback (Standalone / Testing):** If running manually without `Shortcut Input`, fall back to your static Mac LAN IP:
      ```text
      http://<YOUR_MAC_LAN_IP>:3000/api/cleanup-batch
      ```
      *(The server prints this IP address and scannable QR code on launch).*
+   - Name the output variable **`CleanupURL`**.
 2. Add the **Get Contents of URL** action:
+   - **URL:** `CleanupURL`
    - **Method:** `GET`
    - **Headers:** `Accept: application/json`
 3. Tap the output variable name and name it **`BatchPayload`**.
@@ -115,8 +117,8 @@ Open the **Shortcuts** app on your iPhone, tap **+** in the top right to create 
 
 | # | Action Name | Parameters / Values | Output Variable |
 |---|-------------|---------------------|-----------------|
-| 1 | **URL** | `http://<MAC_IP>:3000/api/cleanup-batch` | `CleanupURL` |
-| 2 | **Get Contents of URL** | Method: `GET`, URL: `CleanupURL` | `BatchPayload` |
+| 1 | **URL / Shortcut Input** | **Dynamic Input (Primary):** `Shortcut Input`<br>*(Passed dynamically by Web App via `&input=text&text=...`)*<br>**Static Fallback:** `http://<MAC_IP>:3000/api/cleanup-batch` | `CleanupURL` |
+| 2 | **Get Contents of URL** | Method: `GET`, URL: `CleanupURL`, Headers: `Accept: application/json` | `BatchPayload` |
 | 3 | **Get Dictionary Value** | Key: `minDate`, Dict: `BatchPayload` | `MinDate` |
 | 4 | **Get Dictionary Value** | Key: `maxDate`, Dict: `BatchPayload` | `MaxDate` |
 | 5 | **Get Dictionary Value** | Key: `deleteNamesDelimited`, Dict: `BatchPayload` | `DelimitedNames` |
@@ -130,6 +132,10 @@ Open the **Shortcuts** app on your iPhone, tap **+** in the top right to create 
 | 13 | **Delete Photos** | Photos: `ToDelete` | Native iOS Prompt |
 | 14 | **URL** | `http://<MAC_IP>:3000/api/cleanup-complete` | `CompleteURL` |
 | 15 | **Get Contents of URL** | Method: `POST`, URL: `CompleteURL` | — |
+
+> [!NOTE]
+> **Dynamic URL Passing via Shortcut Input:**
+> When you tap **"Run iOS Cleanup Shortcut"** in the web app, it invokes `shortcuts://run-shortcut?name=PhotoTriageCleanup&input=text&text=${encodeURIComponent(cleanupUrl)}`. This dynamically supplies the Mac's LAN IP and port at runtime via `Shortcut Input`, so you never need to edit or reconfigure IP addresses in iOS Shortcuts when switching Wi-Fi networks! The static Mac IP is only needed as a manual testing fallback.
 
 ---
 

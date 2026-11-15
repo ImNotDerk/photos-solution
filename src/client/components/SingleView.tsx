@@ -139,25 +139,27 @@ export const SingleView: React.FC<SingleViewProps> = ({
     touchStartRef.current = null;
     touchCurrentRef.current = null;
 
-    const threshold = 40;
-    if (Math.abs(deltaX) > Math.abs(deltaY)) {
-      if (deltaX < -threshold) {
+    // Only trigger on deliberate horizontal swipes:
+    // Math.abs(deltaX) > 60 and horizontal dominance > 1.5x vertical
+    if (Math.abs(deltaX) > 60 && Math.abs(deltaX) > Math.abs(deltaY) * 1.5) {
+      if (deltaX < -60) {
         // Swipe left -> trash
         onDecision(bundle.id, 'trash');
-      } else if (deltaX > threshold) {
+      } else if (deltaX > 60) {
         // Swipe right -> backup_keep
         onDecision(bundle.id, 'backup_keep');
       }
-    } else {
-      if (Math.abs(deltaY) > threshold) {
-        // Swipe up or down -> backup_only
-        onDecision(bundle.id, 'backup_only');
-      }
+    } else if (deltaY <= -120 && Math.abs(deltaY) > Math.abs(deltaX) * 2) {
+      // Deliberate high-threshold swipe up (>120px) with strong vertical dominance -> backup_only
+      onDecision(bundle.id, 'backup_only');
     }
   };
 
   return (
-    <div className="flex flex-col w-full max-w-4xl mx-auto border border-slate-700 bg-slate-900 text-slate-100">
+    <div
+      className="flex flex-col w-full max-w-4xl mx-auto border border-slate-700 bg-slate-900 text-slate-100 touch-pan-y"
+      style={{ touchAction: 'pan-y' }}
+    >
       {/* Header bar */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-slate-700 bg-slate-950 font-mono text-xs">
         <div className="flex items-center gap-2">
@@ -204,7 +206,8 @@ export const SingleView: React.FC<SingleViewProps> = ({
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
-        className="relative flex items-center justify-center bg-slate-950 select-none min-h-[340px] max-h-[58vh] overflow-hidden"
+        className="relative flex items-center justify-center bg-slate-950 select-none min-h-[340px] max-h-[58vh] overflow-hidden touch-pan-y"
+        style={{ touchAction: 'pan-y' }}
       >
         {/* Companion Badges (top-left) */}
         <div className="absolute top-2 left-2 flex flex-wrap gap-1 z-10 font-mono text-[10px]">
@@ -312,7 +315,7 @@ export const SingleView: React.FC<SingleViewProps> = ({
           [←] Prev
         </button>
         <span className="text-[10px] text-slate-500 uppercase tracking-wider">
-          Swipe Left: Trash | Right: HD+Phone | Vertical: HD Only
+          Swipe Left: Trash | Right: HD+Phone | Swipe Up: HD Only
         </span>
         <button
           onClick={onNext}

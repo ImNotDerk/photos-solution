@@ -396,6 +396,69 @@ describe('Backup Execution & Byte/Hash Verification', () => {
       expect(await fileExists(path.join(destDir, 'IMG_7001_2.HEIC'))).toBe(true);
       expect(await fileExists(path.join(destDir, 'IMG_E7001_2.HEIC'))).toBe(true);
     });
+
+    it('should resolve intra-batch collisions when files in different subdirectories share the same filename in the same candidate batch', async () => {
+      const f1 = await createStagingFile('batchA/IMG_9999.HEIC', 'Photo Content A');
+      const f2 = await createStagingFile('batchB/IMG_9999.HEIC', 'Photo Content B');
+      const f3 = await createStagingFile('batchC/IMG_9999.HEIC', 'Photo Content C');
+
+      const bundle1: AssetBundle = {
+        id: 'IMG_9999_A',
+        canonicalName: 'IMG_9999',
+        files: [{ path: f1.path, filename: 'IMG_9999.HEIC', ext: '.heic', size: f1.size, role: 'primary' }],
+        previewPath: f1.path,
+        capturedAt: '2024-05-10T10:00:00.000Z',
+        targetYear: '2024',
+        targetMonth: 'MAY',
+        dateReliable: true,
+        decision: 'backup_only',
+        alreadyBackedUp: false,
+      };
+
+      const bundle2: AssetBundle = {
+        id: 'IMG_9999_B',
+        canonicalName: 'IMG_9999',
+        files: [{ path: f2.path, filename: 'IMG_9999.HEIC', ext: '.heic', size: f2.size, role: 'primary' }],
+        previewPath: f2.path,
+        capturedAt: '2024-05-10T10:00:00.000Z',
+        targetYear: '2024',
+        targetMonth: 'MAY',
+        dateReliable: true,
+        decision: 'backup_only',
+        alreadyBackedUp: false,
+      };
+
+      const bundle3: AssetBundle = {
+        id: 'IMG_9999_C',
+        canonicalName: 'IMG_9999',
+        files: [{ path: f3.path, filename: 'IMG_9999.HEIC', ext: '.heic', size: f3.size, role: 'primary' }],
+        previewPath: f3.path,
+        capturedAt: '2024-05-10T10:00:00.000Z',
+        targetYear: '2024',
+        targetMonth: 'MAY',
+        dateReliable: true,
+        decision: 'backup_only',
+        alreadyBackedUp: false,
+      };
+
+      const result = await executeBackup([bundle1, bundle2, bundle3], hardDriveDir, stagingDir);
+
+      expect(result.success).toBe(true);
+      expect(result.copiedCount).toBe(3);
+      expect(result.verifiedCount).toBe(3);
+
+      const destA = path.join(hardDriveDir, '2024/MAY/IMG_9999.HEIC');
+      const destB = path.join(hardDriveDir, '2024/MAY/IMG_9999_2.HEIC');
+      const destC = path.join(hardDriveDir, '2024/MAY/IMG_9999_3.HEIC');
+
+      expect(await fileExists(destA)).toBe(true);
+      expect(await fileExists(destB)).toBe(true);
+      expect(await fileExists(destC)).toBe(true);
+
+      expect(await fs.readFile(destA, 'utf8')).toBe('Photo Content A');
+      expect(await fs.readFile(destB, 'utf8')).toBe('Photo Content B');
+      expect(await fs.readFile(destC, 'utf8')).toBe('Photo Content C');
+    });
   });
 
   describe('executeBackup: failure guards and error handling', () => {

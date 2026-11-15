@@ -180,16 +180,18 @@ export async function executeBackup(
         const candidateSuffix = suffixIndex === 1 ? '' : `_${suffixIndex}`;
         let collisionFound = false;
         const tempPlannedFiles: PlannedFile[] = [];
+        const bundleDestPaths = new Set<string>();
 
         for (const file of bundle.files) {
           const destFilename = applySuffix(file.filename, candidateSuffix);
           const destPath = path.join(destDir, destFilename);
 
-          // Check if already claimed within current batch
-          if (claimedDestPaths.has(destPath)) {
+          // Check if already claimed within current batch or within current candidate bundle
+          if (claimedDestPaths.has(destPath) || bundleDestPaths.has(destPath)) {
             collisionFound = true;
             break;
           }
+          bundleDestPaths.add(destPath);
 
           // Precompute source hash
           const srcHash = await computeFileHash(file.path);
@@ -233,6 +235,9 @@ export async function executeBackup(
 
         if (collisionFound) {
           suffixIndex++;
+          if (suffixIndex > 1000) {
+            throw new Error(`Exceeded maximum collision resolution attempts for bundle ${bundle.id}`);
+          }
           continue;
         }
 

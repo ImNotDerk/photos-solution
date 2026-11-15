@@ -190,20 +190,27 @@ describe('SingleView Component', () => {
     );
 
     const swipeTarget = container.querySelector('[data-testid="swipe-area"]') || container.firstChild as HTMLElement;
+    expect(swipeTarget.getAttribute('style')).toContain('touch-action: pan-y');
 
-    // Swipe left (negative deltaX) -> trash
+    // Normal vertical thumb scroll (e.g. deltaY = -40) does NOT trigger triage
+    fireEvent.touchStart(swipeTarget, { touches: [{ clientX: 200, clientY: 200 }] });
+    fireEvent.touchMove(swipeTarget, { touches: [{ clientX: 200, clientY: 160 }] });
+    fireEvent.touchEnd(swipeTarget);
+    expect(onDecision).not.toHaveBeenCalled();
+
+    // Swipe left (negative deltaX < -60) -> trash
     fireEvent.touchStart(swipeTarget, { touches: [{ clientX: 200, clientY: 200 }] });
     fireEvent.touchMove(swipeTarget, { touches: [{ clientX: 80, clientY: 200 }] });
     fireEvent.touchEnd(swipeTarget);
     expect(onDecision).toHaveBeenCalledWith('bundle-1', 'trash');
 
-    // Swipe right (positive deltaX) -> backup_keep
+    // Swipe right (positive deltaX > 60) -> backup_keep
     fireEvent.touchStart(swipeTarget, { touches: [{ clientX: 100, clientY: 200 }] });
     fireEvent.touchMove(swipeTarget, { touches: [{ clientX: 220, clientY: 200 }] });
     fireEvent.touchEnd(swipeTarget);
     expect(onDecision).toHaveBeenCalledWith('bundle-1', 'backup_keep');
 
-    // Swipe up/down (deltaY) -> backup_only
+    // High threshold vertical swipe up (deltaY <= -120) -> backup_only
     fireEvent.touchStart(swipeTarget, { touches: [{ clientX: 200, clientY: 250 }] });
     fireEvent.touchMove(swipeTarget, { touches: [{ clientX: 200, clientY: 130 }] });
     fireEvent.touchEnd(swipeTarget);
