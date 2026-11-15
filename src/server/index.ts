@@ -50,6 +50,20 @@ export async function generateQrCode(url: string): Promise<string> {
 }
 
 /**
+ * Expands leading tilde (~) in file paths to the user's home directory.
+ */
+export function expandHome(filePath: string): string {
+  if (!filePath) return filePath;
+  if (filePath === '~') {
+    return os.homedir();
+  }
+  if (filePath.startsWith(`~${path.sep}`) || filePath.startsWith('~/')) {
+    return path.join(os.homedir(), filePath.slice(2));
+  }
+  return filePath;
+}
+
+/**
  * Detects staging directory.
  * Order of precedence:
  * 1. customPath argument
@@ -60,11 +74,11 @@ export async function generateQrCode(url: string): Promise<string> {
  */
 export function detectStagingDirectory(customPath?: string): string {
   if (customPath && customPath.trim().length > 0) {
-    return path.resolve(customPath);
+    return path.resolve(expandHome(customPath.trim()));
   }
 
   if (process.env.STAGING_DIR && process.env.STAGING_DIR.trim().length > 0) {
-    return path.resolve(process.env.STAGING_DIR);
+    return path.resolve(expandHome(process.env.STAGING_DIR.trim()));
   }
 
   try {
@@ -105,11 +119,11 @@ export function detectStagingDirectory(customPath?: string): string {
  */
 export function detectHardDriveRoot(customDrive?: string): string {
   if (customDrive && customDrive.trim().length > 0) {
-    return path.resolve(customDrive);
+    return path.resolve(expandHome(customDrive.trim()));
   }
 
   if (process.env.HARD_DRIVE_ROOT && process.env.HARD_DRIVE_ROOT.trim().length > 0) {
-    return path.resolve(process.env.HARD_DRIVE_ROOT);
+    return path.resolve(expandHome(process.env.HARD_DRIVE_ROOT.trim()));
   }
 
   return '/Volumes';
@@ -201,32 +215,52 @@ export async function createServer(options?: ServerOptions): Promise<FastifyInst
     const rawUrl = request.raw.url || request.url;
     const urlPath = decodeURIComponent(rawUrl.split('?')[0]);
     const currentStaging = sessionManager.getState().stagingDir || initialStaging;
+    const resolvedStaging = path.resolve(currentStaging);
+    const stagingPrefix = resolvedStaging.endsWith(path.sep) ? resolvedStaging : resolvedStaging + path.sep;
 
-    // A. Direct match with bundle previewPath or asset files in session
+    // Helper to safely serve a file ONLY if it is strictly confined within staging directory
+    const serveIfInStaging = (candidatePath: string) => {
+      const resolvedCandidate = path.resolve(candidatePath);
+      if (!resolvedCandidate.startsWith(stagingPrefix)) {
+        return null;
+      }
+      try {
+        if (fs.existsSync(resolvedCandidate) && fs.statSync(resolvedCandidate).isFile()) {
+          return reply.sendFile(path.basename(resolvedCandidate), path.dirname(resolvedCandidate));
+        }
+      } catch {
+        return null;
+      }
+      return null;
+    };
+
+    // A. Direct match with bundle previewPath or asset files in session (strictly confined to staging)
     const bundles = sessionManager.getState().bundles;
     for (const b of bundles) {
       if (b.previewPath && (b.previewPath === urlPath || b.previewPath.endsWith(urlPath))) {
-        if (fs.existsSync(b.previewPath) && fs.statSync(b.previewPath).isFile()) {
-          return reply.sendFile(path.basename(b.previewPath), path.dirname(b.previewPath));
+        const sent = serveIfInStaging(b.previewPath);
+        if (sent) {
+          return sent;
         }
       }
       const matchFile = b.files.find((f) => f.path === urlPath || f.path.endsWith(urlPath));
-      if (matchFile && fs.existsSync(matchFile.path) && fs.statSync(matchFile.path).isFile()) {
-        return reply.sendFile(path.basename(matchFile.path), path.dirname(matchFile.path));
+      if (matchFile) {
+        const sent = serveIfInStaging(matchFile.path);
+        if (sent) {
+          return sent;
+        }
       }
     }
 
-    // B. Relative to staging directory
-    const cleanRel = urlPath.replace(/^\//, '');
-    const candidateInStaging = path.resolve(currentStaging, cleanRel);
-    if (fs.existsSync(candidateInStaging) && fs.statSync(candidateInStaging).isFile()) {
-      return reply.sendFile(path.basename(candidateInStaging), path.dirname(candidateInStaging));
+    // B. Relative path inside staging directory (strictly verified within stagingPrefix)
+    const cleanRel = urlPath.replace(/^\/+/, '');
+    const candidateInStaging = path.resolve(resolvedStaging, cleanRel);
+    const sentRel = serveIfInStaging(candidateInStaging);
+    if (sentRel) {
+      return sentRel;
     }
 
-    // C. Direct file path on disk
-    if (fs.existsSync(urlPath) && fs.statSync(urlPath).isFile()) {
-      return reply.sendFile(path.basename(urlPath), path.dirname(urlPath));
-    }
+    // Case C removed: Never serve arbitrary disk paths outside staging directory
 
     // D. SPA HTML fallback if accepting HTML and client dist exists
     if (clientDistDir) {

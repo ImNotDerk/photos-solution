@@ -10,6 +10,7 @@ import {
   detectStagingDirectory,
   detectHardDriveRoot,
   generateQrCode,
+  expandHome,
 } from '../../src/server/index.js';
 import { SessionManager, type SessionData } from '../../src/server/routes.js';
 import { LEDGER_FILENAME, loadLedger } from '../../src/server/ledger.js';
@@ -70,29 +71,40 @@ describe('End-to-End Workflow & Server Runner (Task 7)', () => {
       expect(qr.length).toBeGreaterThan(20);
     });
 
-    it('detectStagingDirectory respects custom path, env var, or falls back to ./staging', async () => {
+    it('expandHome correctly expands leading tildes', () => {
+      expect(expandHome('~')).toBe(os.homedir());
+      expect(expandHome('~/Downloads/AirDrop')).toBe(path.join(os.homedir(), 'Downloads/AirDrop'));
+      expect(expandHome('/absolute/path')).toBe('/absolute/path');
+      expect(expandHome('./relative/path')).toBe('./relative/path');
+    });
+
+    it('detectStagingDirectory respects custom path, env var, tilde expansion, or falls back to ./staging', async () => {
       // 1. Explicit path
       expect(detectStagingDirectory('/custom/path')).toBe('/custom/path');
 
-      // 2. Env var
+      // 2. Tilde expansion
+      expect(detectStagingDirectory('~/Downloads/AirDrop')).toBe(path.join(os.homedir(), 'Downloads/AirDrop'));
+
+      // 3. Env var
       const prevEnv = process.env.STAGING_DIR;
-      process.env.STAGING_DIR = '/env/staging/path';
-      expect(detectStagingDirectory()).toBe('/env/staging/path');
+      process.env.STAGING_DIR = '~/env/staging/path';
+      expect(detectStagingDirectory()).toBe(path.join(os.homedir(), 'env/staging/path'));
       delete process.env.STAGING_DIR;
       if (prevEnv) process.env.STAGING_DIR = prevEnv;
 
-      // 3. Fallback
+      // 4. Fallback
       const detected = detectStagingDirectory();
       expect(typeof detected).toBe('string');
       expect(detected.length).toBeGreaterThan(0);
     });
 
-    it('detectHardDriveRoot respects custom drive, env var, or defaults to /Volumes', () => {
+    it('detectHardDriveRoot respects custom drive, env var, tilde expansion, or defaults to /Volumes', () => {
       expect(detectHardDriveRoot('/Volumes/MyPassport')).toBe('/Volumes/MyPassport');
+      expect(detectHardDriveRoot('~/BackupDrive')).toBe(path.join(os.homedir(), 'BackupDrive'));
 
       const prevEnv = process.env.HARD_DRIVE_ROOT;
-      process.env.HARD_DRIVE_ROOT = '/Volumes/CustomDrive';
-      expect(detectHardDriveRoot()).toBe('/Volumes/CustomDrive');
+      process.env.HARD_DRIVE_ROOT = '~/CustomDrive';
+      expect(detectHardDriveRoot()).toBe(path.join(os.homedir(), 'CustomDrive'));
       delete process.env.HARD_DRIVE_ROOT;
       if (prevEnv) process.env.HARD_DRIVE_ROOT = prevEnv;
 
@@ -171,6 +183,25 @@ describe('End-to-End Workflow & Server Runner (Task 7)', () => {
       });
       expect(clientRes.statusCode).toBe(200);
       expect(clientRes.body).toContain('Photo Triage App');
+
+      // Security check: Strictly reject arbitrary file reads and directory traversal attacks
+      const forbiddenPaths = [
+        '/etc/hosts',
+        '/etc/passwd',
+        '/../../../etc/hosts',
+        '/media/../../../etc/hosts',
+        '/..%2F..%2F..%2Fetc%2Fhosts',
+      ];
+      for (const targetPath of forbiddenPaths) {
+        const attackRes = await app.inject({
+          method: 'GET',
+          url: targetPath,
+        });
+        // Must reject with 404 or non-200 and never expose host system files
+        expect(attackRes.statusCode).not.toBe(200);
+        expect(attackRes.body).not.toContain('localhost');
+        expect(attackRes.body).not.toContain('root:');
+      }
 
       // Step B: User performs triage decisions
       // Triage IMG_1001 -> backup_only
