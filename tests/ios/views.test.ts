@@ -209,6 +209,12 @@ describe('iOS Utilitarian SwiftUI Views Contract Tests (Task 4)', () => {
       expect(code).toContain('public let assets: [TriageAsset]');
       expect(code).toContain('func groupedDailySections(for assets: [TriageAsset]) -> [DailyAssetSection]');
     });
+
+    it('implements pinned sticky date section headers via LazyVGrid and DaySectionHeader', () => {
+      expect(code).toContain('pinnedViews: [.sectionHeaders]');
+      expect(code).toContain('DaySectionHeader');
+      expect(code).toContain('Section(header:');
+    });
   });
 
   describe('BackupProgressView & Hardware Safety Invariant', () => {

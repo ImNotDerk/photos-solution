@@ -205,24 +205,30 @@ public struct GridTriageView: View {
     // MARK: - Asset Grid
 
     private var assetGridScrollView: some View {
-        ScrollView {
-            LazyVGrid(columns: columns, spacing: 4) {
-                ForEach(displayAssets) { asset in
-                    let decision = triageState.decision(for: asset)
-                    let isSelected = selectedAssetIds.contains(asset.id)
+        let dailySections = groupedDailySections(for: displayAssets)
 
-                    GridThumbnailCell(
-                        asset: asset,
-                        decision: decision,
-                        isSelectMode: isSelectMode,
-                        isSelected: isSelected
-                    )
-                    .onTapGesture {
-                        if isSelectMode {
-                            toggleSelection(for: asset)
-                        } else {
-                            triageState.selectAsset(asset)
-                            onAssetSelected?(asset)
+        return ScrollView {
+            LazyVGrid(columns: columns, spacing: 4, pinnedViews: [.sectionHeaders]) {
+                ForEach(dailySections) { section in
+                    Section(header: DaySectionHeader(title: section.title, count: section.assets.count)) {
+                        ForEach(section.assets) { asset in
+                            let decision = triageState.decision(for: asset)
+                            let isSelected = selectedAssetIds.contains(asset.id)
+
+                            GridThumbnailCell(
+                                asset: asset,
+                                decision: decision,
+                                isSelectMode: isSelectMode,
+                                isSelected: isSelected
+                            )
+                            .onTapGesture {
+                                if isSelectMode {
+                                    toggleSelection(for: asset)
+                                } else {
+                                    triageState.selectAsset(asset)
+                                    onAssetSelected?(asset)
+                                }
+                            }
                         }
                     }
                 }
@@ -447,5 +453,44 @@ public struct GridThumbnailCell: View {
             let img = await PhotoKitManager.shared.loadThumbnail(for: asset)
             thumbnail = img
         }
+    }
+}
+
+/// Sticky Section Header displaying the capture date and asset count for daily grouping.
+public struct DaySectionHeader: View {
+    public let title: String
+    public let count: Int
+
+    public init(title: String, count: Int) {
+        self.title = title
+        self.count = count
+    }
+
+    public var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "calendar")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundColor(.consoleCyan)
+
+            Text(title)
+                .font(.system(size: 13, weight: .bold, design: .rounded))
+                .foregroundColor(.slate100)
+
+            Spacer()
+
+            Text("\(count) \(count == 1 ? "PHOTO" : "PHOTOS")")
+                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                .foregroundColor(.slate400)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(Color.slate800)
+                .cornerRadius(4)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(Color.slate950.opacity(0.92))
+        .utilitarianBorder(color: Color.slate800, width: 1, cornerRadius: 4)
+        .padding(.top, 4)
+        .padding(.bottom, 2)
     }
 }
