@@ -115,6 +115,18 @@ describe('Backup Execution & Byte/Hash Verification', () => {
       expect(await computeFileHash(dest1Aae)).toBe(crypto.createHash('sha256').update('Sidecar 1001 xml').digest('hex'));
       expect(await computeFileHash(dest2Heic)).toBe(crypto.createHash('sha256').update('Photo 1002 bytes').digest('hex'));
 
+      // Verify capturedAt timestamps are preserved on destination files
+      const stat1Heic = await fs.stat(dest1Heic);
+      const stat1Mov = await fs.stat(dest1Mov);
+      const stat1Aae = await fs.stat(dest1Aae);
+      const stat2Heic = await fs.stat(dest2Heic);
+      const expectedTime1Sec = Math.floor(new Date('2024-05-15T10:30:00.000Z').getTime() / 1000);
+      const expectedTime2Sec = Math.floor(new Date('2024-06-20T14:00:00.000Z').getTime() / 1000);
+      expect(Math.floor(stat1Heic.mtimeMs / 1000)).toBe(expectedTime1Sec);
+      expect(Math.floor(stat1Mov.mtimeMs / 1000)).toBe(expectedTime1Sec);
+      expect(Math.floor(stat1Aae.mtimeMs / 1000)).toBe(expectedTime1Sec);
+      expect(Math.floor(stat2Heic.mtimeMs / 1000)).toBe(expectedTime2Sec);
+
       // Verify source files were deleted from staging upon successful 100% verification
       expect(await fileExists(f1.path)).toBe(false);
       expect(await fileExists(f2.path)).toBe(false);

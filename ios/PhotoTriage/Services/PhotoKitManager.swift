@@ -367,7 +367,11 @@ public final class PhotoKitManager: ObservableObject {
             let filename: String
 
             if !res.originalFilename.isEmpty {
-                filename = res.originalFilename
+                if role == .editSidecar && (res.originalFilename.lowercased().hasSuffix(".plist") || res.originalFilename.lowercased() == "adjustments.plist") {
+                    filename = "\(asset.canonicalName).AAE"
+                } else {
+                    filename = res.originalFilename
+                }
             } else {
                 let ext: String
                 switch role {

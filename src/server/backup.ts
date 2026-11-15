@@ -348,10 +348,24 @@ export async function executeBackup(
   const copyFileFn = options?.copyFile || fs.copyFile;
 
   try {
-    for (const pf of allPlannedFiles) {
-      if (!pf.alreadyMatches) {
-        await copyFileFn(pf.srcPath, pf.destPath);
-        copiedCount++;
+    for (const pb of plannedBundles) {
+      const targetDate = pb.bundle.capturedAt ? new Date(pb.bundle.capturedAt) : null;
+      for (const pf of pb.plannedFiles) {
+        if (!pf.alreadyMatches) {
+          await copyFileFn(pf.srcPath, pf.destPath);
+          copiedCount++;
+
+          if (targetDate && !isNaN(targetDate.getTime())) {
+            try {
+              await fs.utimes(pf.destPath, targetDate, targetDate);
+            } catch {}
+          } else {
+            try {
+              const srcStat = await fs.stat(pf.srcPath);
+              await fs.utimes(pf.destPath, srcStat.mtime, srcStat.mtime);
+            } catch {}
+          }
+        }
       }
     }
   } catch (err: any) {

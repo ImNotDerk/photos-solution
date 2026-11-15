@@ -817,7 +817,8 @@ export const routes: FastifyPluginAsync<RoutesOptions> = async (
 
           const safeFilename = path.basename(part.filename || `${part.fieldname}.bin`);
           const ext = path.extname(safeFilename).toLowerCase();
-          const isAllowedExt = IMAGE_EXTENSIONS.has(ext) || VIDEO_EXTENSIONS.has(ext) || ext === '.aae';
+          const isAllowedExt =
+            IMAGE_EXTENSIONS.has(ext) || VIDEO_EXTENSIONS.has(ext) || ext === '.aae' || ext === '.plist';
           if (safeFilename.startsWith('.') || !isAllowedExt) {
             for await (const _ of part.file) {}
             await cleanupTmpFiles();
@@ -978,6 +979,19 @@ export const routes: FastifyPluginAsync<RoutesOptions> = async (
         }
       }
 
+      const canonicalName = fields.canonicalName || bundleId;
+      const primaryStem = path.parse(primaryFile.filename).name || canonicalName;
+
+      // Normalize edit_sidecar filename if sent as generic adjustments.plist or .plist
+      for (const file of uploadedFiles) {
+        if (file.fieldname === 'edit_sidecar') {
+          const sidecarExt = path.extname(file.filename).toLowerCase();
+          if (sidecarExt === '.plist' || file.filename.toLowerCase() === 'adjustments.plist') {
+            file.filename = `${primaryStem}.AAE`;
+          }
+        }
+      }
+
       // Guard against intra-bundle duplicate filenames
       const seenFilenames = new Set<string>();
       for (const file of uploadedFiles) {
@@ -992,8 +1006,6 @@ export const routes: FastifyPluginAsync<RoutesOptions> = async (
         }
         seenFilenames.add(file.filename);
       }
-
-      const canonicalName = fields.canonicalName || bundleId;
 
       // Sanitize and validate targetYear and targetMonth against path traversal (CWE-22)
       if (
@@ -1136,6 +1148,18 @@ export const routes: FastifyPluginAsync<RoutesOptions> = async (
             } else {
               throw renameErr;
             }
+          }
+        }
+      }
+
+      // Preserve original capturedAt timestamp on all resolved destination files
+      if (capturedAt) {
+        const fileDate = new Date(capturedAt);
+        if (!isNaN(fileDate.getTime())) {
+          for (const rf of resolvedFiles) {
+            try {
+              await fsp.utimes(rf.destPath, fileDate, fileDate);
+            } catch {}
           }
         }
       }

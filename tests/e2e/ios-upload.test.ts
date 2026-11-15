@@ -175,6 +175,15 @@ describe('E2E Integration: iOS App Upload -> Mac Server -> Hard Drive & Ledger (
       expect(await computeFileHash(writtenVideoPath)).toBe(expectedVideoSha256);
       expect(await computeFileHash(writtenSidecarPath)).toBe(expectedSidecarSha256);
 
+      // Verify filesystem creation/modified timestamp preserves capturedAt metadata
+      const expectedCapturedTime = new Date('2024-07-14T15:30:00.000Z').getTime();
+      const photoStat = await fsp.stat(writtenPhotoPath);
+      const videoStat = await fsp.stat(writtenVideoPath);
+      const sidecarStat = await fsp.stat(writtenSidecarPath);
+      expect(Math.floor(photoStat.mtimeMs / 1000)).toBe(Math.floor(expectedCapturedTime / 1000));
+      expect(Math.floor(videoStat.mtimeMs / 1000)).toBe(Math.floor(expectedCapturedTime / 1000));
+      expect(Math.floor(sidecarStat.mtimeMs / 1000)).toBe(Math.floor(expectedCapturedTime / 1000));
+
       // 6. Verify .photo-triage-ledger.json persistence on hard drive
       const ledger = await loadLedger(hardDriveRoot);
       expect(ledger.size).toBe(1);
@@ -183,6 +192,51 @@ describe('E2E Integration: iOS App Upload -> Mac Server -> Hard Drive & Ledger (
       expect(savedEntry?.canonicalName).toBe('IMG_2048');
       expect(savedEntry?.targetRelPath).toBe('2024/JULY/IMG_2048.HEIC');
       expect(savedEntry?.decision).toBe('backup_only');
+    });
+
+    it('accepts adjustments.plist as edit_sidecar, normalizes to canonical stem AAE, and preserves capturedAt metadata', async () => {
+      const photoBytes = Buffer.from('Edited primary photo bytes');
+      const plistBytes = Buffer.from('<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>test</key><string>adjustments</string></dict></plist>');
+      const capturedAtIso = '2023-11-05T09:15:30.000Z';
+
+      const { payload, contentType } = buildIosMultipartPayload(
+        {
+          bundleId: 'IMG_5500',
+          canonicalName: 'IMG_5500',
+          capturedAt: capturedAtIso,
+          targetYear: '2023',
+          targetMonth: 'NOVEMBER',
+          decision: 'backup_only',
+        },
+        [
+          { role: 'primary', filename: 'IMG_5500.HEIC', mimeType: 'image/heic', data: photoBytes },
+          { role: 'edit_sidecar', filename: 'adjustments.plist', mimeType: 'application/x-plist', data: plistBytes },
+        ]
+      );
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/upload',
+        headers: { 'content-type': contentType },
+        payload,
+      });
+
+      expect(res.statusCode).toBe(200);
+      const receipt = res.json();
+      expect(receipt.success).toBe(true);
+
+      const targetDir = path.join(hardDriveRoot, '2023', 'NOVEMBER');
+      const writtenPhotoPath = path.join(targetDir, 'IMG_5500.HEIC');
+      const writtenSidecarPath = path.join(targetDir, 'IMG_5500.AAE');
+
+      expect(fs.existsSync(writtenPhotoPath)).toBe(true);
+      expect(fs.existsSync(writtenSidecarPath)).toBe(true);
+
+      const photoStat = await fsp.stat(writtenPhotoPath);
+      const sidecarStat = await fsp.stat(writtenSidecarPath);
+      const expectedTimeSec = Math.floor(new Date(capturedAtIso).getTime() / 1000);
+      expect(Math.floor(photoStat.mtimeMs / 1000)).toBe(expectedTimeSec);
+      expect(Math.floor(sidecarStat.mtimeMs / 1000)).toBe(expectedTimeSec);
     });
 
     it('correctly handles backup_keep decision with companion files', async () => {
