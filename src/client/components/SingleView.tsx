@@ -59,19 +59,32 @@ export const SingleView: React.FC<SingleViewProps> = ({
   const [feedbackStatus, setFeedbackStatus] = useState<TriageDecision | null>(null);
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
   const touchCurrentRef = useRef<{ x: number; y: number } | null>(null);
+  const autoAdvanceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Clear feedback status when moving to another bundle
   useEffect(() => {
     setFeedbackStatus(null);
   }, [bundle?.id]);
 
-  // Handle triage action with visual feedback and 250ms auto-advance
+  // Clean up auto-advance timer on unmount
+  useEffect(() => {
+    return () => {
+      if (autoAdvanceTimerRef.current) {
+        clearTimeout(autoAdvanceTimerRef.current);
+      }
+    };
+  }, []);
+
+  // Handle triage action with visual feedback and debounced 250ms auto-advance
   const handleTriageAction = (decision: TriageDecision) => {
     if (!bundle) return;
     setFeedbackStatus(decision);
     onDecision(bundle.id, decision);
+    if (autoAdvanceTimerRef.current) {
+      clearTimeout(autoAdvanceTimerRef.current);
+    }
     if (onNext) {
-      setTimeout(() => {
+      autoAdvanceTimerRef.current = setTimeout(() => {
         onNext();
       }, 250);
     }
