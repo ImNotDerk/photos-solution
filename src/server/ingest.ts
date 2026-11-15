@@ -8,7 +8,7 @@ import type { AssetBundle, AssetFile, AssetFileRole } from '../types/index.js';
 
 const execFileAsync = promisify(execFile);
 
-const MONTH_NAMES = [
+export const MONTH_NAMES = [
   'JANUARY',
   'FEBRUARY',
   'MARCH',
