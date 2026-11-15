@@ -203,8 +203,26 @@ export const routes: FastifyPluginAsync<RoutesOptions> = async (
 
     const currentState = manager.getState();
 
-    // Inspect hard drive mount status
-    const hardDriveMounted = await isHardDriveMounted(currentState.hardDriveRoot);
+    // Inspect hard drive mount status, auto-resolving /Volumes to mounted external disk if available
+    let hardDriveRootToUse = currentState.hardDriveRoot;
+    let hardDriveMounted = await isHardDriveMounted(hardDriveRootToUse);
+    if (!hardDriveMounted && (hardDriveRootToUse === '/Volumes' || !hardDriveRootToUse)) {
+      try {
+        const entries = await fsp.readdir('/Volumes', { withFileTypes: true });
+        for (const entry of entries) {
+          if (entry.name.startsWith('.') || entry.name === 'Macintosh HD') continue;
+          const candidate = path.join('/Volumes', entry.name);
+          if (await isHardDriveMounted(candidate)) {
+            hardDriveRootToUse = candidate;
+            hardDriveMounted = true;
+            manager.setState({ hardDriveRoot: candidate });
+            break;
+          }
+        }
+      } catch {
+        // Ignore detection errors
+      }
+    }
     manager.setState({ hardDriveMounted });
 
     // Scan staging if explicitly requested or if stagingDir is set but bundles are empty

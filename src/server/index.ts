@@ -128,6 +128,25 @@ export function detectHardDriveRoot(customDrive?: string): string {
     return path.resolve(expandHome(process.env.HARD_DRIVE_ROOT.trim()));
   }
 
+  // Auto-detect mounted external volume inside /Volumes
+  try {
+    if (fs.existsSync('/Volumes')) {
+      const entries = fs.readdirSync('/Volumes', { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.name.startsWith('.') || entry.name === 'Macintosh HD') continue;
+        const fullPath = path.join('/Volumes', entry.name);
+        try {
+          fs.accessSync(fullPath, fs.constants.R_OK | fs.constants.W_OK);
+          return fullPath;
+        } catch {
+          // Continue searching
+        }
+      }
+    }
+  } catch {
+    // Ignore scan errors and fallback
+  }
+
   return '/Volumes';
 }
 

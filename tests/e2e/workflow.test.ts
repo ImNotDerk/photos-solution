@@ -108,7 +108,8 @@ describe('End-to-End Workflow & Server Runner (Task 7)', () => {
       delete process.env.HARD_DRIVE_ROOT;
       if (prevEnv) process.env.HARD_DRIVE_ROOT = prevEnv;
 
-      expect(detectHardDriveRoot()).toBe('/Volumes');
+      const defaultDrive = detectHardDriveRoot();
+      expect(defaultDrive === '/Volumes' || defaultDrive.startsWith('/Volumes/')).toBe(true);
     });
   });
 
