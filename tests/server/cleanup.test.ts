@@ -6,9 +6,14 @@ import Fastify, { FastifyInstance } from 'fastify';
 import type { AssetBundle, LedgerEntry } from '../../src/types/index.js';
 import { generateCleanupPayload } from '../../src/server/cleanup.js';
 import { routes, SessionManager } from '../../src/server/routes.js';
+import { LEDGER_BACKUP_DIR, LEDGER_BACKUP_FILENAME } from '../../src/server/ledger.js';
 
 function createMockBundle(overrides: Partial<AssetBundle> = {}): AssetBundle {
   const canonicalName = overrides.canonicalName || 'IMG_1001';
+  const decision = overrides.decision || 'unsorted';
+  // Default alreadyBackedUp to true if decision is backup_only, unless explicitly overridden
+  const defaultAlreadyBackedUp = decision === 'backup_only';
+
   return {
     id: overrides.id || canonicalName,
     canonicalName,
@@ -26,8 +31,8 @@ function createMockBundle(overrides: Partial<AssetBundle> = {}): AssetBundle {
     targetYear: '2024',
     targetMonth: 'JUNE',
     dateReliable: overrides.dateReliable !== undefined ? overrides.dateReliable : true,
-    decision: overrides.decision || 'unsorted',
-    alreadyBackedUp: overrides.alreadyBackedUp || false,
+    decision,
+    alreadyBackedUp: overrides.alreadyBackedUp !== undefined ? overrides.alreadyBackedUp : defaultAlreadyBackedUp,
     ...overrides,
   };
 }
@@ -46,6 +51,7 @@ describe('Cleanup Payload Generation (generateCleanupPayload)', () => {
         canonicalName: 'IMG_1002',
         capturedAt: '2024-06-20T12:00:00.000Z',
         decision: 'backup_only',
+        alreadyBackedUp: true,
       }),
       createMockBundle({
         id: 'IMG_1000',
@@ -58,16 +64,81 @@ describe('Cleanup Payload Generation (generateCleanupPayload)', () => {
     const ledger = new Map<string, LedgerEntry>();
     const result = generateCleanupPayload(bundles, ledger);
 
-    // Earliest candidate: 2024-06-15T12:00:00.000Z -> -24h = 2024-06-14T12:00:00.000Z
+    // Earliest approved candidate: 2024-06-15T12:00:00.000Z -> -24h = 2024-06-14T12:00:00.000Z
     expect(result.minDate).toBe('2024-06-14T12:00:00.000Z');
-    // Latest candidate: 2024-06-20T12:00:00.000Z -> +24h = 2024-06-21T12:00:00.000Z
+    // Latest approved candidate: 2024-06-20T12:00:00.000Z -> +24h = 2024-06-21T12:00:00.000Z
     expect(result.maxDate).toBe('2024-06-21T12:00:00.000Z');
   });
 
-  it('defaults minDate and maxDate to current timestamp when there are no delete candidates', () => {
+  it('computes minDate and maxDate ONLY from approvedCandidates, ignoring unreliable date candidates', () => {
+    const bundles: AssetBundle[] = [
+      createMockBundle({
+        id: 'IMG_1001',
+        canonicalName: 'IMG_1001',
+        capturedAt: '2024-06-15T12:00:00.000Z',
+        decision: 'trash',
+        dateReliable: true,
+      }),
+      createMockBundle({
+        id: 'IMG_1002',
+        canonicalName: 'IMG_1002',
+        capturedAt: '2024-06-20T12:00:00.000Z',
+        decision: 'backup_only',
+        alreadyBackedUp: true,
+        dateReliable: true,
+      }),
+      createMockBundle({
+        id: 'IMG_1003',
+        canonicalName: 'IMG_1003',
+        capturedAt: '2019-01-01T12:00:00.000Z', // Old date from 5 years ago!
+        decision: 'trash',
+        dateReliable: false, // Unreliable date -> moves to manualDeleteItems
+      }),
+    ];
+
+    const result = generateCleanupPayload(bundles, new Map());
+
+    // minDate and maxDate MUST be based on IMG_1001 and IMG_1002, NOT IMG_1003!
+    expect(result.minDate).toBe('2024-06-14T12:00:00.000Z');
+    expect(result.maxDate).toBe('2024-06-21T12:00:00.000Z');
+    expect(result.deleteNamesDelimited).toBe('|IMG_1001|IMG_1002|');
+    expect(result.manualDeleteItems).toHaveLength(1);
+    expect(result.manualDeleteItems[0].canonicalName).toBe('IMG_1003');
+  });
+
+  it('requires alreadyBackedUp === true for backup_only candidates before inclusion in approvedCandidates', () => {
+    const bundles: AssetBundle[] = [
+      createMockBundle({
+        id: 'B1',
+        canonicalName: 'IMG_1001',
+        decision: 'backup_only',
+        alreadyBackedUp: false, // NOT yet verified on hard drive!
+      }),
+      createMockBundle({
+        id: 'B2',
+        canonicalName: 'IMG_1002',
+        decision: 'backup_only',
+        alreadyBackedUp: true, // Verified on hard drive
+      }),
+      createMockBundle({
+        id: 'B3',
+        canonicalName: 'IMG_1003',
+        decision: 'trash', // Trash is always ready for phone deletion
+      }),
+    ];
+
+    const result = generateCleanupPayload(bundles, new Map());
+
+    // B1 must NOT be in deleteNamesDelimited!
+    expect(result.deleteNamesDelimited).toBe('|IMG_1002|IMG_1003|');
+    expect(result.deleteCount).toBe(2);
+  });
+
+  it('defaults minDate and maxDate to current timestamp when there are no approved candidates', () => {
     const bundles: AssetBundle[] = [
       createMockBundle({ decision: 'backup_keep' }),
       createMockBundle({ decision: 'unsorted' }),
+      createMockBundle({ decision: 'backup_only', alreadyBackedUp: false }),
     ];
 
     const before = Date.now();
@@ -87,7 +158,7 @@ describe('Cleanup Payload Generation (generateCleanupPayload)', () => {
   it('formats deleteNamesDelimited with pipe delimiters (e.g. |IMG_1001|IMG_1002|)', () => {
     const bundles: AssetBundle[] = [
       createMockBundle({ canonicalName: 'IMG_1001', decision: 'trash' }),
-      createMockBundle({ canonicalName: 'IMG_1002', decision: 'backup_only' }),
+      createMockBundle({ canonicalName: 'IMG_1002', decision: 'backup_only', alreadyBackedUp: true }),
     ];
 
     const result = generateCleanupPayload(bundles, new Map());
@@ -97,12 +168,25 @@ describe('Cleanup Payload Generation (generateCleanupPayload)', () => {
     expect(result.manualDeleteItems).toHaveLength(0);
   });
 
+  it('deduplicates names in deleteNamesDelimited using Set to avoid redundant tokens', () => {
+    const bundles: AssetBundle[] = [
+      createMockBundle({ id: '1', canonicalName: 'IMG_1001', decision: 'trash' }),
+      createMockBundle({ id: '2', canonicalName: 'IMG_1001', decision: 'trash' }),
+      createMockBundle({ id: '3', canonicalName: 'IMG_1002', decision: 'trash' }),
+    ];
+
+    const result = generateCleanupPayload(bundles, new Map());
+
+    expect(result.deleteNamesDelimited).toBe('|IMG_1001|IMG_1002|');
+  });
+
   it('separates candidates that collide with backup_keep in the ledger into manualDeleteItems', () => {
     const bundles: AssetBundle[] = [
       createMockBundle({
         id: 'IMG_1001',
         canonicalName: 'IMG_1001',
         decision: 'backup_only',
+        alreadyBackedUp: true,
       }),
       createMockBundle({
         id: 'IMG_1002',
@@ -148,6 +232,7 @@ describe('Cleanup Payload Generation (generateCleanupPayload)', () => {
         id: 'IMG_2002',
         canonicalName: 'IMG_2002',
         decision: 'backup_only',
+        alreadyBackedUp: true,
       }),
     ];
 
@@ -165,6 +250,7 @@ describe('Cleanup Payload Generation (generateCleanupPayload)', () => {
       createMockBundle({
         canonicalName: 'IMG_3001',
         decision: 'backup_only',
+        alreadyBackedUp: true,
         dateReliable: false, // Unreliable date!
       }),
       createMockBundle({
@@ -203,13 +289,18 @@ describe('Fastify REST API Routes', () => {
   let tmpDir: string;
   let stagingDir: string;
   let hardDriveRoot: string;
+  let fakeHomeDir: string;
 
   beforeEach(async () => {
     tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'cleanup-routes-test-'));
     stagingDir = path.join(tmpDir, 'staging');
     hardDriveRoot = path.join(tmpDir, 'harddrive');
+    fakeHomeDir = path.join(tmpDir, 'home');
+    process.env.PHOTO_TRIAGE_HOME = fakeHomeDir;
+
     await fsp.mkdir(stagingDir, { recursive: true });
     await fsp.mkdir(hardDriveRoot, { recursive: true });
+    await fsp.mkdir(fakeHomeDir, { recursive: true });
 
     sessionManager = new SessionManager({
       stagingDir,
@@ -227,12 +318,13 @@ describe('Fastify REST API Routes', () => {
   });
 
   afterEach(async () => {
+    delete process.env.PHOTO_TRIAGE_HOME;
     await app.close();
     await fsp.rm(tmpDir, { recursive: true, force: true });
   });
 
   describe('GET /api/session', () => {
-    it('returns current staging batch and triage counts', async () => {
+    it('returns current staging batch, triage counts, and hardDriveMounted status', async () => {
       const response = await app.inject({
         method: 'GET',
         url: '/api/session',
@@ -251,6 +343,19 @@ describe('Fastify REST API Routes', () => {
       });
       expect(json.stagingDir).toBe(stagingDir);
       expect(json.hardDriveRoot).toBe(hardDriveRoot);
+      expect(json.hardDriveMounted).toBe(true);
+    });
+
+    it('reports hardDriveMounted: false when hardDriveRoot is not mounted or missing', async () => {
+      sessionManager.setState({ hardDriveRoot: '/nonexistent/missing/drive/path' });
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/session',
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json().hardDriveMounted).toBe(false);
     });
   });
 
@@ -333,8 +438,8 @@ describe('Fastify REST API Routes', () => {
       expect(response.statusCode).toBe(400);
     });
 
-    it('executes backup and marks session backup as verified', async () => {
-      // Create real dummy files in staging
+    it('executes backup and marks session backup as verified when ALL backup bundles complete', async () => {
+      // Create real dummy file in staging
       const file1 = path.join(stagingDir, 'IMG_0001.HEIC');
       await fsp.writeFile(file1, 'photo 1 data');
 
@@ -344,6 +449,7 @@ describe('Fastify REST API Routes', () => {
             id: 'B1',
             canonicalName: 'IMG_0001',
             decision: 'backup_only',
+            alreadyBackedUp: false,
             files: [
               {
                 path: file1,
@@ -372,6 +478,65 @@ describe('Fastify REST API Routes', () => {
       expect(session.isBackupVerified).toBe(true);
       expect(session.status).toBe('cleanup_ready');
     });
+
+    it('does NOT mark session as cleanup_ready when only a partial subset of bundles is backed up', async () => {
+      const file1 = path.join(stagingDir, 'IMG_0001.HEIC');
+      const file2 = path.join(stagingDir, 'IMG_0002.HEIC');
+      await fsp.writeFile(file1, 'photo 1 data');
+      await fsp.writeFile(file2, 'photo 2 data');
+
+      sessionManager.setState({
+        bundles: [
+          createMockBundle({
+            id: 'B1',
+            canonicalName: 'IMG_0001',
+            decision: 'backup_only',
+            alreadyBackedUp: false,
+            files: [
+              { path: file1, filename: 'IMG_0001.HEIC', ext: '.heic', size: 12, role: 'primary' },
+            ],
+          }),
+          createMockBundle({
+            id: 'B2',
+            canonicalName: 'IMG_0002',
+            decision: 'backup_only',
+            alreadyBackedUp: false,
+            files: [
+              { path: file2, filename: 'IMG_0002.HEIC', ext: '.heic', size: 12, role: 'primary' },
+            ],
+          }),
+        ],
+      });
+
+      // Partial backup: only backup B1
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/backup',
+        payload: {
+          bundleIds: ['B1'],
+        },
+      });
+
+      expect(response.statusCode).toBe(200);
+      const session = sessionManager.getState();
+      // Partial backup safety: B2 is not backed up yet, so cleanup must remain locked!
+      expect(session.isBackupVerified).toBe(false);
+      expect(session.status).toBe('triaging');
+
+      // Now backup B2
+      const response2 = await app.inject({
+        method: 'POST',
+        url: '/api/backup',
+        payload: {
+          bundleIds: ['B2'],
+        },
+      });
+
+      expect(response2.statusCode).toBe(200);
+      const finalSession = sessionManager.getState();
+      expect(finalSession.isBackupVerified).toBe(true);
+      expect(finalSession.status).toBe('cleanup_ready');
+    });
   });
 
   describe('GET /api/cleanup-batch', () => {
@@ -394,6 +559,7 @@ describe('Fastify REST API Routes', () => {
           createMockBundle({
             canonicalName: 'IMG_0001',
             decision: 'backup_only',
+            alreadyBackedUp: true,
             capturedAt: '2024-06-15T10:00:00.000Z',
           }),
           createMockBundle({
@@ -415,6 +581,78 @@ describe('Fastify REST API Routes', () => {
       expect(json.deleteCount).toBe(2);
       expect(json.minDate).toBe('2024-06-14T10:00:00.000Z');
       expect(json.maxDate).toBe('2024-06-17T10:00:00.000Z');
+    });
+
+    it('falls back to mirror ledger when hard drive ledger is unreadable', async () => {
+      // Create mirror ledger in fakeHomeDir/.photo-triage/ledger-backup.json
+      const mirrorDir = path.join(fakeHomeDir, LEDGER_BACKUP_DIR);
+      await fsp.mkdir(mirrorDir, { recursive: true });
+      const mirrorFile = path.join(mirrorDir, LEDGER_BACKUP_FILENAME);
+
+      const mirrorEntries = [
+        {
+          id: 'IMG_0001',
+          canonicalName: 'IMG_0001',
+          sha256: 'hash1',
+          targetRelPath: '2024/JUNE/IMG_0001.HEIC',
+          capturedAt: '2024-06-01T10:00:00.000Z',
+          backedUpAt: '2024-06-01T11:00:00.000Z',
+          decision: 'backup_keep', // Collision with candidate!
+        },
+      ];
+      await fsp.writeFile(mirrorFile, JSON.stringify(mirrorEntries));
+
+      // Point hardDriveRoot to non-existent directory so loadLedger fails
+      sessionManager.setState({
+        isBackupVerified: true,
+        hardDriveRoot: '/nonexistent/corrupt/hd/path',
+        bundles: [
+          createMockBundle({
+            canonicalName: 'IMG_0001',
+            decision: 'backup_only',
+            alreadyBackedUp: true,
+          }),
+          createMockBundle({
+            canonicalName: 'IMG_0002',
+            decision: 'trash',
+          }),
+        ],
+      });
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/cleanup-batch',
+      });
+
+      expect(response.statusCode).toBe(200);
+      const json = response.json();
+      // Mirror ledger was loaded and flagged IMG_0001 as keep_collision!
+      expect(json.deleteNamesDelimited).toBe('|IMG_0002|');
+      expect(json.manualDeleteItems).toHaveLength(1);
+      expect(json.manualDeleteItems[0].canonicalName).toBe('IMG_0001');
+      expect(json.manualDeleteItems[0].reason).toBe('keep_collision');
+    });
+
+    it('returns HTTP 500 when hard drive ledger fails AND mirror ledger cannot be loaded', async () => {
+      sessionManager.setState({
+        isBackupVerified: true,
+        hardDriveRoot: '/nonexistent/corrupt/hd/path',
+        bundles: [
+          createMockBundle({
+            canonicalName: 'IMG_0001',
+            decision: 'trash',
+          }),
+        ],
+      });
+
+      // fakeHomeDir has no mirror ledger file
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/cleanup-batch',
+      });
+
+      expect(response.statusCode).toBe(500);
+      expect(response.json().error).toContain('Cannot verify ledger for safety collision checks');
     });
 
     it('allows bypassing unverified lock when force=true query param is set', async () => {

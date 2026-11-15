@@ -1,7 +1,12 @@
+import * as os from 'os';
+import * as path from 'path';
+import * as fsp from 'fs/promises';
+import * as fs from 'fs';
 import type { FastifyInstance, FastifyPluginAsync } from 'fastify';
 import type {
   AssetBundle,
   BackupRequest,
+  LedgerEntry,
   SessionState,
   SessionStatus,
   TriageCounts,
@@ -10,7 +15,7 @@ import type {
 } from '../types/index.js';
 import { generateCleanupPayload } from './cleanup.js';
 import { scanStagingDirectory } from './ingest.js';
-import { checkDuplicates, loadLedger } from './ledger.js';
+import { checkDuplicates, loadLedger, LEDGER_BACKUP_DIR, LEDGER_BACKUP_FILENAME } from './ledger.js';
 import { executeBackup } from './backup.js';
 
 export function computeCounts(bundles: AssetBundle[]): TriageCounts {
@@ -36,6 +41,44 @@ export function computeCounts(bundles: AssetBundle[]): TriageCounts {
   return counts;
 }
 
+export async function isHardDriveMounted(hardDriveRoot?: string): Promise<boolean> {
+  if (!hardDriveRoot || !hardDriveRoot.trim()) {
+    return false;
+  }
+  try {
+    await fsp.access(hardDriveRoot, fs.constants.R_OK | fs.constants.W_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function loadMirrorLedger(): Promise<Map<string, LedgerEntry>> {
+  const homeDir = process.env.PHOTO_TRIAGE_HOME || os.homedir();
+  const backupPath = path.join(homeDir, LEDGER_BACKUP_DIR, LEDGER_BACKUP_FILENAME);
+  const rawData = await fsp.readFile(backupPath, 'utf8');
+  const parsed = JSON.parse(rawData);
+  const map = new Map<string, LedgerEntry>();
+
+  if (Array.isArray(parsed)) {
+    for (const entry of parsed) {
+      if (entry && entry.sha256) {
+        map.set(entry.sha256, entry);
+      }
+    }
+  } else if (parsed && typeof parsed === 'object') {
+    for (const [key, value] of Object.entries(parsed)) {
+      const entry = value as LedgerEntry;
+      const entryKey = entry?.sha256 || key;
+      if (entryKey && entry) {
+        map.set(entryKey, entry);
+      }
+    }
+  }
+
+  return map;
+}
+
 export interface SessionData extends SessionState {
   cleanupCompleted: boolean;
 }
@@ -54,6 +97,7 @@ export class SessionManager {
       counts: initial?.counts || computeCounts(bundles),
       status: initial?.status || 'staging',
       isBackupVerified: initial?.isBackupVerified || false,
+      hardDriveMounted: initial?.hardDriveMounted ?? false,
     };
     if (initial?.cleanupCompleted !== undefined) {
       this.cleanupCompleted = initial.cleanupCompleted;
@@ -96,6 +140,7 @@ export class SessionManager {
       counts: initial?.counts || computeCounts(bundles),
       status: initial?.status || 'staging',
       isBackupVerified: initial?.isBackupVerified || false,
+      hardDriveMounted: initial?.hardDriveMounted ?? false,
     };
   }
 }
@@ -114,7 +159,7 @@ export const routes: FastifyPluginAsync<RoutesOptions> = async (
 
   /**
    * GET /api/session
-   * Returns current staging batch, triage counts, and session state.
+   * Returns current staging batch, triage counts, hardDriveMounted status, and session state.
    * Optional query params:
    * - stagingDir: set or update staging directory
    * - hardDriveRoot: set or update hard drive root
@@ -138,12 +183,16 @@ export const routes: FastifyPluginAsync<RoutesOptions> = async (
 
     const currentState = manager.getState();
 
+    // Inspect hard drive mount status
+    const hardDriveMounted = await isHardDriveMounted(currentState.hardDriveRoot);
+    manager.setState({ hardDriveMounted });
+
     // Scan staging if explicitly requested or if stagingDir is set but bundles are empty
     if ((scan === 'true' || scan === true) && currentState.stagingDir) {
       try {
         let bundles = await scanStagingDirectory(currentState.stagingDir);
 
-        if (currentState.hardDriveRoot) {
+        if (currentState.hardDriveRoot && hardDriveMounted) {
           const ledger = await loadLedger(currentState.hardDriveRoot);
           bundles = await checkDuplicates(bundles, ledger, currentState.hardDriveRoot);
         }
@@ -159,7 +208,10 @@ export const routes: FastifyPluginAsync<RoutesOptions> = async (
       }
     }
 
-    return reply.status(200).send(manager.getState());
+    return reply.status(200).send({
+      ...manager.getState(),
+      hardDriveMounted,
+    });
   });
 
   /**
@@ -232,6 +284,8 @@ export const routes: FastifyPluginAsync<RoutesOptions> = async (
   /**
    * POST /api/backup
    * Executes backup and verification for triaged bundles.
+   * Only transitions to isBackupVerified: true and status: 'cleanup_ready'
+   * if ALL backup_only and backup_keep bundles in the session have alreadyBackedUp === true.
    */
   fastify.post<{
     Body: BackupRequest;
@@ -271,11 +325,26 @@ export const routes: FastifyPluginAsync<RoutesOptions> = async (
           }
         }
 
-        manager.setState({
-          isBackupVerified: true,
-          status: 'cleanup_ready',
-          bundles: currentState.bundles,
-        });
+        // Safety check: verify whether ALL backup_only and backup_keep bundles are backed up
+        const backupBundles = currentState.bundles.filter(
+          (b) => b.decision === 'backup_only' || b.decision === 'backup_keep'
+        );
+        const hasUnfinishedBackup = backupBundles.some((b) => !b.alreadyBackedUp);
+
+        if (!hasUnfinishedBackup) {
+          manager.setState({
+            isBackupVerified: true,
+            status: 'cleanup_ready',
+            bundles: currentState.bundles,
+          });
+        } else {
+          // Partial backup: remaining items still require backup before cleanup
+          manager.setState({
+            isBackupVerified: false,
+            status: 'triaging',
+            bundles: currentState.bundles,
+          });
+        }
 
         return reply.status(200).send(result);
       } else {
@@ -305,6 +374,8 @@ export const routes: FastifyPluginAsync<RoutesOptions> = async (
    * GET /api/cleanup-batch
    * Returns the payload for iOS Shortcut and manual cleanup UI.
    * Locked until backup is verified, unless force=true is passed.
+   * If loadLedger fails on hard drive, falls back to mirror backup;
+   * if mirror also fails, returns 500 to prevent disabling keep-collision checks.
    */
   fastify.get<{
     Querystring: {
@@ -323,10 +394,34 @@ export const routes: FastifyPluginAsync<RoutesOptions> = async (
       });
     }
 
-    let ledger = new Map();
+    let ledger = new Map<string, LedgerEntry>();
     if (currentState.hardDriveRoot) {
+      const mounted = await isHardDriveMounted(currentState.hardDriveRoot);
+      if (!mounted) {
+        // Hard drive is disconnected: fall back to mirror backup
+        try {
+          ledger = await loadMirrorLedger();
+        } catch (mirrorErr: any) {
+          return reply.status(500).send({
+            error: `Cannot verify ledger for safety collision checks: Hard drive "${currentState.hardDriveRoot}" is not mounted or accessible, and mirror backup failed: ${mirrorErr.message || String(mirrorErr)}`,
+          });
+        }
+      } else {
+        try {
+          ledger = await loadLedger(currentState.hardDriveRoot);
+        } catch (hdErr: any) {
+          try {
+            ledger = await loadMirrorLedger();
+          } catch (mirrorErr: any) {
+            return reply.status(500).send({
+              error: `Cannot verify ledger for safety collision checks: ${hdErr.message || String(hdErr)}`,
+            });
+          }
+        }
+      }
+    } else {
       try {
-        ledger = await loadLedger(currentState.hardDriveRoot);
+        ledger = await loadMirrorLedger();
       } catch {
         ledger = new Map();
       }

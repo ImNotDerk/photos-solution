@@ -9,11 +9,15 @@ import type {
  * Generates the cleanup payload for the iOS Shortcut and manual review UI.
  *
  * Requirements:
- * 1. minDate and maxDate: compute earliest and latest capturedAt among delete candidates
- *    ('trash' and 'backup_only'), padded by ±24 hours (ISO string).
- *    If no candidates exist, defaults to current timestamp.
- * 2. deleteNamesDelimited: pipe-delimited format (e.g. |IMG_1001|IMG_1002|).
- * 3. Safety filter for manualDeleteItems:
+ * 1. minDate and maxDate: computed ONLY from approvedCandidates (those actually in
+ *    deleteNamesDelimited), padded by ±24 hours (ISO string).
+ *    If approvedCandidates is empty, defaults to current timestamp.
+ * 2. deleteNamesDelimited: pipe-delimited format (e.g. |IMG_1001|IMG_1002|). Deduplicates
+ *    names using Set to avoid redundant tokens.
+ * 3. Partial backup safety:
+ *    - For any candidate with decision === 'backup_only', REQUIRE alreadyBackedUp === true
+ *      before including in approvedCandidates. If not already backed up, it must NOT be deleted.
+ * 4. Safety filter for manualDeleteItems:
  *    - Candidates whose canonical name collides with a backup_keep photo in the ledger
  *      or current session must be flagged with reason: 'keep_collision'.
  *    - Candidates where dateReliable === false must be flagged with reason: 'unreliable_date'.
@@ -29,33 +33,7 @@ export function generateCleanupPayload(
     (b) => b.decision === 'trash' || b.decision === 'backup_only'
   );
 
-  // 2. Compute minDate and maxDate among delete candidates with ±24h padding
-  let minDate: string;
-  let maxDate: string;
-
-  if (deleteCandidates.length === 0) {
-    const now = new Date().toISOString();
-    minDate = now;
-    maxDate = now;
-  } else {
-    const timestamps = deleteCandidates
-      .map((b) => (b.capturedAt ? new Date(b.capturedAt).getTime() : NaN))
-      .filter((t) => !isNaN(t));
-
-    if (timestamps.length === 0) {
-      const now = new Date().toISOString();
-      minDate = now;
-      maxDate = now;
-    } else {
-      const minMs = Math.min(...timestamps);
-      const maxMs = Math.max(...timestamps);
-      const PADDING_MS = 24 * 60 * 60 * 1000;
-      minDate = new Date(minMs - PADDING_MS).toISOString();
-      maxDate = new Date(maxMs + PADDING_MS).toISOString();
-    }
-  }
-
-  // 3. Build set of canonical names for photos designated backup_keep
+  // 2. Build set of canonical names for photos designated backup_keep
   //    From both current session and the ledger
   const keepCanonicalNames = new Set<string>();
 
@@ -80,11 +58,16 @@ export function generateCleanupPayload(
     }
   }
 
-  // 4. Filter delete candidates into approved vs manualDeleteItems
+  // 3. Filter delete candidates into approved vs manualDeleteItems
   const approvedCandidates: AssetBundle[] = [];
   const manualDeleteItems: ManualDeleteItem[] = [];
 
   for (const candidate of deleteCandidates) {
+    // Safety requirement: For 'backup_only', must be confirmed backed up before deletion
+    if (candidate.decision === 'backup_only' && !candidate.alreadyBackedUp) {
+      continue;
+    }
+
     const canonicalUpper = candidate.canonicalName.toUpperCase();
     const isKeepCollision = keepCanonicalNames.has(canonicalUpper);
 
@@ -111,10 +94,41 @@ export function generateCleanupPayload(
     }
   }
 
-  // 5. Build pipe-delimited delete string (e.g. |IMG_1001|IMG_1002|)
+  // 4. Compute minDate and maxDate ONLY from approvedCandidates with ±24h padding
+  //    Uses .reduce() instead of spread to avoid call-stack overflow on large arrays
+  let minDate: string;
+  let maxDate: string;
+
+  if (approvedCandidates.length === 0) {
+    const now = new Date().toISOString();
+    minDate = now;
+    maxDate = now;
+  } else {
+    const timestamps = approvedCandidates
+      .map((b) => (b.capturedAt ? new Date(b.capturedAt).getTime() : NaN))
+      .filter((t) => !isNaN(t));
+
+    if (timestamps.length === 0) {
+      const now = new Date().toISOString();
+      minDate = now;
+      maxDate = now;
+    } else {
+      const minMs = timestamps.reduce((min, val) => (val < min ? val : min), timestamps[0]);
+      const maxMs = timestamps.reduce((max, val) => (val > max ? val : max), timestamps[0]);
+      const PADDING_MS = 24 * 60 * 60 * 1000;
+      minDate = new Date(minMs - PADDING_MS).toISOString();
+      maxDate = new Date(maxMs + PADDING_MS).toISOString();
+    }
+  }
+
+  // 5. Build pipe-delimited delete string with deduplicated names (e.g. |IMG_1001|IMG_1002|)
+  const uniqueApprovedNames = Array.from(
+    new Set(approvedCandidates.map((c) => c.canonicalName))
+  );
+
   const deleteNamesDelimited =
-    approvedCandidates.length > 0
-      ? `|${approvedCandidates.map((c) => c.canonicalName).join('|')}|`
+    uniqueApprovedNames.length > 0
+      ? `|${uniqueApprovedNames.join('|')}|`
       : '';
 
   return {
@@ -123,6 +137,6 @@ export function generateCleanupPayload(
     deleteNamesDelimited,
     deleteCount: approvedCandidates.length,
     manualDeleteItems,
-    totalCandidates: deleteCandidates.length,
+    totalCandidates: approvedCandidates.length + manualDeleteItems.length,
   };
 }

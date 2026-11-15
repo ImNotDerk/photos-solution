@@ -58,6 +58,7 @@ export interface SessionState {
   counts: TriageCounts;
   status?: SessionStatus;
   isBackupVerified?: boolean;
+  hardDriveMounted?: boolean;
 }
 
 export interface ManualDeleteItem {
