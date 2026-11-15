@@ -141,6 +141,20 @@ describe('iOS Utilitarian SwiftUI Views Contract Tests (Task 4)', () => {
       expect(code).toContain('"Photos"');
       expect(code).toContain('info.circle');
       expect(code).toContain('showDetailsSheet = true');
+      expect(code).toContain('topRightDecisionBadge');
+    });
+
+    it('implements continuous carousel track with Instagram-style spring popups and gestures', () => {
+      expect(code).toContain('carouselSlide');
+      expect(code).toContain('carouselOffset');
+      expect(code).toContain('popDecision');
+      expect(code).toContain('instagramPopOverlay');
+      // Double tap Keep
+      expect(code).toContain('onTapGesture(count: 2)');
+      expect(code).toContain('applyTriageDecision(.backupKeep)');
+      // Vertical gestures (Down = Trash, Up = HD Only)
+      expect(code).toContain('applyTriageDecision(.trash)');
+      expect(code).toContain('applyTriageDecision(.backupOnly)');
     });
 
     it('contains FilmstripScrubberView and standard bottom action toolbar', () => {
