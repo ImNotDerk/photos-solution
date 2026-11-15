@@ -174,10 +174,82 @@ describe('SingleView Component', () => {
     expect(onPrevious).toHaveBeenCalled();
   });
 
-  it('handles touch swipes for horizontal browsing and swipe-up details (Option B)', () => {
+  it('renders top-right decision badge reflecting bundle decision state', () => {
+    const { rerender } = render(
+      <SingleView
+        bundle={{ ...mockBundles[0], decision: 'unsorted' }}
+        currentIndex={0}
+        totalCount={3}
+        unsortedCount={1}
+        onDecision={onDecision}
+      />
+    );
+
+    const badge = screen.getByTestId('top-right-decision-badge');
+    expect(badge).toBeDefined();
+    expect(badge.textContent).toContain('UNSORTED');
+
+    rerender(
+      <SingleView
+        bundle={{ ...mockBundles[0], decision: 'trash' }}
+        currentIndex={0}
+        totalCount={3}
+        unsortedCount={0}
+        onDecision={onDecision}
+      />
+    );
+    expect(screen.getByTestId('top-right-decision-badge').textContent).toContain('TRASH');
+
+    rerender(
+      <SingleView
+        bundle={{ ...mockBundles[0], decision: 'backup_only' }}
+        currentIndex={0}
+        totalCount={3}
+        unsortedCount={0}
+        onDecision={onDecision}
+      />
+    );
+    expect(screen.getByTestId('top-right-decision-badge').textContent).toContain('HD ONLY');
+
+    rerender(
+      <SingleView
+        bundle={{ ...mockBundles[0], decision: 'backup_keep' }}
+        currentIndex={0}
+        totalCount={3}
+        unsortedCount={0}
+        onDecision={onDecision}
+      />
+    );
+    expect(screen.getByTestId('top-right-decision-badge').textContent).toContain('KEEP');
+  });
+
+  it('renders continuous carousel track with adjacent slides and interactive drag container', () => {
+    render(
+      <SingleView
+        bundle={mockBundles[1]}
+        bundles={mockBundles}
+        currentIndex={1}
+        totalCount={3}
+        unsortedCount={1}
+        onDecision={onDecision}
+        onPrevious={onPrevious}
+        onNext={onNext}
+      />
+    );
+
+    const carouselTrack = screen.getByTestId('carousel-track');
+    expect(carouselTrack).toBeDefined();
+
+    // Slides for bundles are present in carousel track
+    expect(screen.getByTestId('carousel-slide-0')).toBeDefined();
+    expect(screen.getByTestId('carousel-slide-1')).toBeDefined();
+    expect(screen.getByTestId('carousel-slide-2')).toBeDefined();
+  });
+
+  it('handles Option A gestures: horizontal carousel paging, swipe down trash, swipe up hd only, double click keep', () => {
     const { container } = render(
       <SingleView
-        bundle={mockBundles[0]}
+        bundle={mockBundles[1]}
         bundles={mockBundles}
         currentIndex={1}
         totalCount={3}
@@ -190,36 +262,47 @@ describe('SingleView Component', () => {
       />
     );
 
-    const swipeTarget = container.querySelector('[data-testid="swipe-area"]') || container.firstChild as HTMLElement;
+    const swipeTarget = screen.getByTestId('carousel-viewport');
     expect(swipeTarget.getAttribute('style')).toContain('touch-action: pan-y');
 
-    // Normal small vertical scroll does NOT trigger navigation or triage
+    // Small scroll does NOT trigger navigation or triage
     fireEvent.touchStart(swipeTarget, { touches: [{ clientX: 200, clientY: 200 }] });
-    fireEvent.touchMove(swipeTarget, { touches: [{ clientX: 200, clientY: 180 }] });
+    fireEvent.touchMove(swipeTarget, { touches: [{ clientX: 200, clientY: 190 }] });
     fireEvent.touchEnd(swipeTarget);
     expect(onDecision).not.toHaveBeenCalled();
     expect(onNext).not.toHaveBeenCalled();
     expect(onPrevious).not.toHaveBeenCalled();
 
-    // Swipe left (negative deltaX < -50) -> next photo (browsing / comparing without triage)
+    // Horizontal swipe left (negative deltaX < -50) -> next photo
     fireEvent.touchStart(swipeTarget, { touches: [{ clientX: 200, clientY: 200 }] });
     fireEvent.touchMove(swipeTarget, { touches: [{ clientX: 80, clientY: 200 }] });
     fireEvent.touchEnd(swipeTarget);
     expect(onNext).toHaveBeenCalled();
     expect(onDecision).not.toHaveBeenCalled();
 
-    // Swipe right (positive deltaX > 50) -> previous photo (browsing / comparing without triage)
+    // Horizontal swipe right (positive deltaX > 50) -> previous photo
     fireEvent.touchStart(swipeTarget, { touches: [{ clientX: 100, clientY: 200 }] });
     fireEvent.touchMove(swipeTarget, { touches: [{ clientX: 220, clientY: 200 }] });
     fireEvent.touchEnd(swipeTarget);
     expect(onPrevious).toHaveBeenCalled();
     expect(onDecision).not.toHaveBeenCalled();
 
-    // Swipe up (deltaY < -80) -> reveals Apple iOS 18 details sheet
-    fireEvent.touchStart(swipeTarget, { touches: [{ clientX: 200, clientY: 250 }] });
-    fireEvent.touchMove(swipeTarget, { touches: [{ clientX: 200, clientY: 130 }] });
+    // Vertical swipe down (deltaY > 55) -> triggers TRASH decision with Instagram pop
+    fireEvent.touchStart(swipeTarget, { touches: [{ clientX: 200, clientY: 100 }] });
+    fireEvent.touchMove(swipeTarget, { touches: [{ clientX: 205, clientY: 210 }] });
     fireEvent.touchEnd(swipeTarget);
-    expect(screen.getByTestId('photo-details-sheet')).toBeDefined();
+    expect(onDecision).toHaveBeenCalledWith('bundle-2', 'trash');
+    expect(screen.getByTestId('ig-pop-overlay')).toBeDefined();
+
+    // Vertical swipe up (deltaY < -55) -> triggers HD ONLY decision with Instagram pop
+    fireEvent.touchStart(swipeTarget, { touches: [{ clientX: 200, clientY: 250 }] });
+    fireEvent.touchMove(swipeTarget, { touches: [{ clientX: 205, clientY: 140 }] });
+    fireEvent.touchEnd(swipeTarget);
+    expect(onDecision).toHaveBeenCalledWith('bundle-2', 'backup_only');
+
+    // Double tap/click -> triggers KEEP decision
+    fireEvent.doubleClick(swipeTarget);
+    expect(onDecision).toHaveBeenCalledWith('bundle-2', 'backup_keep');
   });
 
   it('renders FilmstripScrubber and allows jumping between photos', () => {

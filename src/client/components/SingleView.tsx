@@ -57,13 +57,22 @@ export const SingleView: React.FC<SingleViewProps> = ({
 }) => {
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [feedbackStatus, setFeedbackStatus] = useState<TriageDecision | null>(null);
-  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+  const [popDecision, setPopDecision] = useState<TriageDecision | null>(null);
+  const [dragX, setDragX] = useState<number>(0);
+  const [isDragging, setIsDragging] = useState<boolean>(false);
+
+  const touchStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
   const touchCurrentRef = useRef<{ x: number; y: number } | null>(null);
+  const isMouseDownRef = useRef<boolean>(false);
+  const mouseStartRef = useRef<{ x: number; y: number } | null>(null);
+  const lastTapTimeRef = useRef<number>(0);
   const autoAdvanceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Clear feedback status when moving to another bundle
+  // Clear transient feedback states when moving to another bundle
   useEffect(() => {
     setFeedbackStatus(null);
+    setDragX(0);
+    setIsDragging(false);
   }, [bundle?.id]);
 
   // Clean up auto-advance timer on unmount
@@ -75,16 +84,20 @@ export const SingleView: React.FC<SingleViewProps> = ({
     };
   }, []);
 
-  // Handle triage action with visual feedback and debounced 250ms auto-advance
+  // Handle triage action with Instagram spring pop animation and auto-advance
   const handleTriageAction = (decision: TriageDecision) => {
     if (!bundle) return;
     setFeedbackStatus(decision);
+    setPopDecision(decision);
     onDecision(bundle.id, decision);
+
     if (autoAdvanceTimerRef.current) {
       clearTimeout(autoAdvanceTimerRef.current);
     }
+
     if (onNext) {
       autoAdvanceTimerRef.current = setTimeout(() => {
+        setPopDecision(null);
         onNext();
       }, 250);
     }
@@ -167,42 +180,51 @@ export const SingleView: React.FC<SingleViewProps> = ({
     );
   }
 
-  // Calculate total bundle size
-  const totalBytes = bundle.files.reduce((acc, f) => acc + (f.size || 0), 0);
+  // Items in continuous carousel
+  const itemsToRender: AssetBundle[] = bundles && bundles.length > 0 ? bundles : [bundle];
 
-  // Detect companion roles
-  const hasLiveVideo = bundle.files.some((f) => f.role === 'live_video');
-  const hasEditedRender = bundle.files.some((f) => f.role === 'edited_render' || f.role === 'edit_sidecar');
-  const isVideoPrimary = bundle.files.some((f) => f.role === 'primary' && ['.mov', '.mp4', '.m4v'].includes(f.ext.toLowerCase()));
-
-  // Touch handlers for Apple Photos Option B gestures:
-  // - Horizontal swipe left (deltaX < -50): Next photo
-  // - Horizontal swipe right (deltaX > 50): Previous photo
-  // - Vertical swipe up (deltaY < -80): Open Details Sheet
+  // Option A Touch Handlers:
+  // - Horizontal drag with 1:1 finger tracking, rubber-banding, snapping
+  // - Swipe DOWN (deltaY > 55) -> Trash
+  // - Swipe UP (deltaY < -55) -> HD Only
+  // - Double-tap -> Keep
   const handleTouchStart = (e: React.TouchEvent) => {
     if (e.touches && e.touches.length === 1) {
       touchStartRef.current = {
         x: e.touches[0].clientX,
         y: e.touches[0].clientY,
+        time: Date.now(),
       };
       touchCurrentRef.current = {
         x: e.touches[0].clientX,
         y: e.touches[0].clientY,
       };
+      setIsDragging(true);
     }
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
-    if (e.touches && e.touches.length === 1) {
-      touchCurrentRef.current = {
-        x: e.touches[0].clientX,
-        y: e.touches[0].clientY,
-      };
+    if (!touchStartRef.current || !e.touches || e.touches.length !== 1) return;
+    const curX = e.touches[0].clientX;
+    const curY = e.touches[0].clientY;
+    touchCurrentRef.current = { x: curX, y: curY };
+
+    const dx = curX - touchStartRef.current.x;
+    const dy = curY - touchStartRef.current.y;
+
+    if (Math.abs(dx) > Math.abs(dy)) {
+      let offset = dx;
+      if ((currentIndex === 0 && dx > 0) || (currentIndex === totalCount - 1 && dx < 0)) {
+        offset = dx * 0.35;
+      }
+      setDragX(offset);
     }
   };
 
   const handleTouchEnd = (e: React.TouchEvent) => {
+    setIsDragging(false);
     if (!touchStartRef.current) return;
+
     const endX = (e.changedTouches && e.changedTouches.length > 0)
       ? e.changedTouches[0].clientX
       : touchCurrentRef.current?.x;
@@ -210,27 +232,102 @@ export const SingleView: React.FC<SingleViewProps> = ({
       ? e.changedTouches[0].clientY
       : touchCurrentRef.current?.y;
 
-    if (endX === undefined || endY === undefined) return;
+    if (endX === undefined || endY === undefined) {
+      setDragX(0);
+      return;
+    }
 
     const deltaX = endX - touchStartRef.current.x;
     const deltaY = endY - touchStartRef.current.y;
+    const now = Date.now();
     touchStartRef.current = null;
     touchCurrentRef.current = null;
 
-    // Horizontal dominant swipe: flip back and forth between photos to compare
-    if (Math.abs(deltaX) > 50 && Math.abs(deltaX) > Math.abs(deltaY) * 1.4) {
-      if (deltaX < -50) {
+    // Check double tap (two taps within 300ms with minimal travel)
+    if (Math.abs(deltaX) < 15 && Math.abs(deltaY) < 15) {
+      if (now - lastTapTimeRef.current < 300) {
+        handleTriageAction('backup_keep');
+        setDragX(0);
+        return;
+      }
+      lastTapTimeRef.current = now;
+    }
+
+    // Vertical dominant flick gestures:
+    // Swipe down (dy > 55) -> Trash
+    // Swipe up (dy < -55) -> HD Only
+    if (Math.abs(deltaY) > 55 && Math.abs(deltaY) > Math.abs(deltaX) * 1.3) {
+      if (deltaY > 55) {
+        handleTriageAction('trash');
+      } else if (deltaY < -55) {
+        handleTriageAction('backup_only');
+      }
+      setDragX(0);
+      return;
+    }
+
+    // Horizontal dominant carousel swipe:
+    if (Math.abs(deltaX) > 50 && Math.abs(deltaX) > Math.abs(deltaY) * 1.3) {
+      if (deltaX < -50 && currentIndex < totalCount - 1) {
         if (onNext) onNext();
-      } else if (deltaX > 50) {
+      } else if (deltaX > 50 && currentIndex > 0) {
         if (onPrevious) onPrevious();
       }
-    } else if (deltaY < -80 && Math.abs(deltaY) > Math.abs(deltaX) * 1.5) {
-      // Deliberate swipe up -> reveal Apple iOS 18 details sheet
-      setIsDetailsOpen(true);
+    }
+
+    setDragX(0);
+  };
+
+  // Mouse Drag Handlers for Desktop Browsing
+  const handleMouseDown = (e: React.MouseEvent) => {
+    isMouseDownRef.current = true;
+    mouseStartRef.current = { x: e.clientX, y: e.clientY };
+    setIsDragging(true);
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isMouseDownRef.current || !mouseStartRef.current) return;
+    const dx = e.clientX - mouseStartRef.current.x;
+    const dy = e.clientY - mouseStartRef.current.y;
+    if (Math.abs(dx) > Math.abs(dy)) {
+      let offset = dx;
+      if ((currentIndex === 0 && dx > 0) || (currentIndex === totalCount - 1 && dx < 0)) {
+        offset = dx * 0.35;
+      }
+      setDragX(offset);
     }
   };
 
-  // Status banner is strictly transient feedback during a triage action tap
+  const handleMouseUp = (e: React.MouseEvent) => {
+    if (!isMouseDownRef.current || !mouseStartRef.current) return;
+    isMouseDownRef.current = false;
+    setIsDragging(false);
+
+    const dx = e.clientX - mouseStartRef.current.x;
+    const dy = e.clientY - mouseStartRef.current.y;
+    mouseStartRef.current = null;
+
+    if (Math.abs(dy) > 55 && Math.abs(dy) > Math.abs(dx) * 1.3) {
+      if (dy > 55) {
+        handleTriageAction('trash');
+      } else if (dy < -55) {
+        handleTriageAction('backup_only');
+      }
+      setDragX(0);
+      return;
+    }
+
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.3) {
+      if (dx < -50 && currentIndex < totalCount - 1) {
+        if (onNext) onNext();
+      } else if (dx > 50 && currentIndex > 0) {
+        if (onPrevious) onPrevious();
+      }
+    }
+
+    setDragX(0);
+  };
+
   const displayDecision = feedbackStatus;
 
   return (
@@ -238,6 +335,15 @@ export const SingleView: React.FC<SingleViewProps> = ({
       className="relative flex flex-col w-full max-w-4xl mx-auto bg-black text-slate-100 rounded-2xl overflow-hidden shadow-2xl border border-slate-700 select-none"
       style={{ touchAction: 'pan-y' }}
     >
+      <style>{`
+        @keyframes igPop {
+          0% { transform: scale(0.3); opacity: 0; }
+          45% { transform: scale(1.22); opacity: 1; }
+          75% { transform: scale(1.0); opacity: 1; }
+          100% { transform: scale(0.96); opacity: 0; }
+        }
+      `}</style>
+
       {/* NATIVE APPLE TOP NAVIGATION BAR */}
       <header className="flex items-center justify-between px-4 py-2.5 bg-black/60 backdrop-blur-md border-b border-slate-700/80 z-20 font-sans">
         {/* Left: Back to Photos / Grid */}
@@ -268,8 +374,43 @@ export const SingleView: React.FC<SingleViewProps> = ({
           </div>
         </div>
 
-        {/* Right: Undo & Info */}
+        {/* Right: Top-Right Decision Badge, Undo & Info */}
         <div className="flex items-center gap-2">
+          {/* Persistent Top-Right Decision Badge */}
+          <div
+            data-testid="top-right-decision-badge"
+            className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold tracking-wider font-mono shadow-sm backdrop-blur-md border transition-all ${
+              bundle.decision === 'trash'
+                ? 'bg-red-950/80 border-red-700/60 text-red-300'
+                : bundle.decision === 'backup_only'
+                ? 'bg-sky-950/80 border-sky-700/60 text-sky-300'
+                : bundle.decision === 'backup_keep'
+                ? 'bg-emerald-950/80 border-emerald-700/60 text-emerald-300'
+                : 'bg-white/10 border-white/15 text-white/50'
+            }`}
+          >
+            <span
+              className={`w-1.5 h-1.5 rounded-full ${
+                bundle.decision === 'trash'
+                  ? 'bg-red-400'
+                  : bundle.decision === 'backup_only'
+                  ? 'bg-sky-400'
+                  : bundle.decision === 'backup_keep'
+                  ? 'bg-emerald-400'
+                  : 'bg-white/40'
+              }`}
+            />
+            <span>
+              {bundle.decision === 'trash'
+                ? 'TRASH'
+                : bundle.decision === 'backup_only'
+                ? 'HD ONLY'
+                : bundle.decision === 'backup_keep'
+                ? 'KEEP'
+                : 'UNSORTED'}
+            </span>
+          </div>
+
           {onUndo && (
             <button
               onClick={onUndo}
@@ -296,38 +437,63 @@ export const SingleView: React.FC<SingleViewProps> = ({
         </div>
       </header>
 
-      {/* FULL-BLEED PHOTO VIEWPORT */}
+      {/* FULL-BLEED PHOTO VIEWPORT WITH INTERACTIVE CAROUSEL TRACK */}
       <div
-        data-testid="swipe-area"
+        data-testid="carousel-viewport"
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
-        className="relative flex-1 flex items-center justify-center bg-black min-h-[380px] max-h-[60vh] overflow-hidden cursor-grab active:cursor-grabbing"
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+        onDoubleClick={() => handleTriageAction('backup_keep')}
+        className="relative flex-1 flex items-center justify-center bg-black min-h-[380px] max-h-[60vh] overflow-hidden cursor-grab active:cursor-grabbing select-none"
         style={{ touchAction: 'pan-y' }}
       >
-        {/* Companion Badges (top-left) */}
-        <div className="absolute top-3 left-3 flex flex-wrap gap-1.5 z-10 font-mono text-[10px]">
-          {hasLiveVideo && (
-            <span className="px-2 py-0.5 rounded bg-emerald-950/80 border border-emerald-600/70 text-emerald-300 font-bold tracking-wider">
-              LIVE
-            </span>
-          )}
-          {hasEditedRender && (
-            <span className="px-2 py-0.5 rounded bg-amber-950/80 border border-amber-600/70 text-amber-300 font-bold tracking-wider">
-              EDIT
-            </span>
-          )}
-          {isVideoPrimary && (
-            <span className="px-2 py-0.5 rounded bg-cyan-950/80 border border-cyan-600/70 text-cyan-300 font-bold tracking-wider">
-              VIDEO
-            </span>
-          )}
-          {!bundle.dateReliable && (
-            <span className="px-2 py-0.5 rounded bg-yellow-950/80 border border-yellow-600/70 text-yellow-300 font-bold tracking-wider">
-              NO EXIF
-            </span>
-          )}
-        </div>
+        {/* Instagram-Style Spring Popover Overlay */}
+        {popDecision && (
+          <div
+            data-testid="ig-pop-overlay"
+            className="absolute inset-0 flex items-center justify-center pointer-events-none z-30"
+          >
+            <div
+              style={{ animation: 'igPop 0.45s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards' }}
+              className={`flex flex-col items-center justify-center w-28 h-28 rounded-full shadow-2xl backdrop-blur-md border ${
+                popDecision === 'backup_keep'
+                  ? 'bg-emerald-600/90 border-emerald-400 text-white shadow-emerald-900/50'
+                  : popDecision === 'trash'
+                  ? 'bg-red-600/90 border-red-400 text-white shadow-red-900/50'
+                  : 'bg-sky-600/90 border-sky-400 text-white shadow-sky-900/50'
+              }`}
+            >
+              {popDecision === 'backup_keep' && (
+                <>
+                  <svg className="w-12 h-12" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clipRule="evenodd" />
+                  </svg>
+                  <span className="text-[10px] font-bold uppercase tracking-wider mt-1">Keep</span>
+                </>
+              )}
+              {popDecision === 'trash' && (
+                <>
+                  <svg className="w-12 h-12" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+                  </svg>
+                  <span className="text-[10px] font-bold uppercase tracking-wider mt-1">Trash</span>
+                </>
+              )}
+              {popDecision === 'backup_only' && (
+                <>
+                  <svg className="w-12 h-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  <span className="text-[10px] font-bold uppercase tracking-wider mt-1">HD Only</span>
+                </>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Transient Apple-style Status Banner (top-center) */}
         {displayDecision && (
@@ -349,24 +515,70 @@ export const SingleView: React.FC<SingleViewProps> = ({
           </div>
         )}
 
-        {/* Media Preview */}
-        {isVideoPrimary && ['.mov', '.mp4', '.m4v'].some((ext) => bundle.previewPath.toLowerCase().endsWith(ext)) ? (
-          <video
-            src={bundle.previewPath}
-            controls
-            playsInline
-            className="max-h-[58vh] max-w-full object-contain"
-          />
-        ) : (
-          <img
-            src={bundle.previewPath}
-            alt={bundle.canonicalName}
-            className="max-h-[58vh] max-w-full object-contain pointer-events-none"
-            onError={(e) => {
-              (e.currentTarget as HTMLElement).style.display = 'none';
-            }}
-          />
-        )}
+        {/* Continuous Sliding Carousel Track */}
+        <div
+          data-testid="carousel-track"
+          className="flex w-full h-full items-center"
+          style={{
+            transform: `translateX(calc(-${currentIndex * 100}% + ${dragX}px))`,
+            transition: isDragging ? 'none' : 'transform 280ms cubic-bezier(0.2, 0.9, 0.3, 1.0)',
+          }}
+        >
+          {itemsToRender.map((item, idx) => (
+            <div
+              key={item.id}
+              data-testid={`carousel-slide-${idx}`}
+              className="relative flex-shrink-0 w-full h-full flex items-center justify-center overflow-hidden"
+              style={{ width: '100%' }}
+            >
+              {/* Companion Badges (top-left of active photo) */}
+              {idx === currentIndex && (
+                <div className="absolute top-3 left-3 flex flex-wrap gap-1.5 z-10 font-mono text-[10px] pointer-events-none">
+                  {item.files.some((f) => f.role === 'live_video') && (
+                    <span className="px-2 py-0.5 rounded bg-emerald-950/80 border border-emerald-600/70 text-emerald-300 font-bold tracking-wider">
+                      LIVE
+                    </span>
+                  )}
+                  {item.files.some((f) => f.role === 'edited_render' || f.role === 'edit_sidecar') && (
+                    <span className="px-2 py-0.5 rounded bg-amber-950/80 border border-amber-600/70 text-amber-300 font-bold tracking-wider">
+                      EDIT
+                    </span>
+                  )}
+                  {item.files.some((f) => f.role === 'primary' && ['.mov', '.mp4', '.m4v'].includes(f.ext.toLowerCase())) && (
+                    <span className="px-2 py-0.5 rounded bg-cyan-950/80 border border-cyan-600/70 text-cyan-300 font-bold tracking-wider">
+                      VIDEO
+                    </span>
+                  )}
+                  {!item.dateReliable && (
+                    <span className="px-2 py-0.5 rounded bg-yellow-950/80 border border-yellow-600/70 text-yellow-300 font-bold tracking-wider">
+                      NO EXIF
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* Media Preview */}
+              {item.files.some((f) => f.role === 'primary' && ['.mov', '.mp4', '.m4v'].includes(f.ext.toLowerCase())) &&
+              ['.mov', '.mp4', '.m4v'].some((ext) => item.previewPath.toLowerCase().endsWith(ext)) ? (
+                <video
+                  src={item.previewPath}
+                  controls={idx === currentIndex}
+                  playsInline
+                  className="max-h-[58vh] max-w-full object-contain pointer-events-none"
+                />
+              ) : (
+                <img
+                  src={item.previewPath}
+                  alt={item.canonicalName}
+                  className="max-h-[58vh] max-w-full object-contain pointer-events-none"
+                  onError={(e) => {
+                    (e.currentTarget as HTMLElement).style.display = 'none';
+                  }}
+                />
+              )}
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* HORIZONTAL FILMSTRIP SCRUBBER */}
