@@ -420,12 +420,15 @@ export const App: React.FC = () => {
         {viewMode === 'single' && (
           <SingleView
             bundle={currentBundle}
+            bundles={sessionState.bundles}
             currentIndex={currentIndex}
             totalCount={sessionState.bundles.length}
             unsortedCount={sessionState.counts.unsorted}
             onDecision={handleDecision}
             onPrevious={() => setCurrentIndex((prev) => Math.max(0, prev - 1))}
             onNext={() => setCurrentIndex((prev) => Math.min(sessionState.bundles.length - 1, prev + 1))}
+            onSelectIndex={(idx) => setCurrentIndex(idx)}
+            onBackToGrid={() => setViewMode('grid')}
             onUndo={handleUndo}
             canUndo={undoStack.length > 0}
             onImportDownloads={handleImportDownloads}

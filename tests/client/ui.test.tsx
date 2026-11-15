@@ -174,11 +174,12 @@ describe('SingleView Component', () => {
     expect(onPrevious).toHaveBeenCalled();
   });
 
-  it('handles touch swipes for mobile triage', () => {
+  it('handles touch swipes for horizontal browsing and swipe-up details (Option B)', () => {
     const { container } = render(
       <SingleView
         bundle={mockBundles[0]}
-        currentIndex={0}
+        bundles={mockBundles}
+        currentIndex={1}
         totalCount={3}
         unsortedCount={1}
         onDecision={onDecision}
@@ -192,29 +193,86 @@ describe('SingleView Component', () => {
     const swipeTarget = container.querySelector('[data-testid="swipe-area"]') || container.firstChild as HTMLElement;
     expect(swipeTarget.getAttribute('style')).toContain('touch-action: pan-y');
 
-    // Normal vertical thumb scroll (e.g. deltaY = -40) does NOT trigger triage
+    // Normal small vertical scroll does NOT trigger navigation or triage
     fireEvent.touchStart(swipeTarget, { touches: [{ clientX: 200, clientY: 200 }] });
-    fireEvent.touchMove(swipeTarget, { touches: [{ clientX: 200, clientY: 160 }] });
+    fireEvent.touchMove(swipeTarget, { touches: [{ clientX: 200, clientY: 180 }] });
     fireEvent.touchEnd(swipeTarget);
     expect(onDecision).not.toHaveBeenCalled();
+    expect(onNext).not.toHaveBeenCalled();
+    expect(onPrevious).not.toHaveBeenCalled();
 
-    // Swipe left (negative deltaX < -60) -> trash
+    // Swipe left (negative deltaX < -50) -> next photo (browsing / comparing without triage)
     fireEvent.touchStart(swipeTarget, { touches: [{ clientX: 200, clientY: 200 }] });
     fireEvent.touchMove(swipeTarget, { touches: [{ clientX: 80, clientY: 200 }] });
     fireEvent.touchEnd(swipeTarget);
-    expect(onDecision).toHaveBeenCalledWith('bundle-1', 'trash');
+    expect(onNext).toHaveBeenCalled();
+    expect(onDecision).not.toHaveBeenCalled();
 
-    // Swipe right (positive deltaX > 60) -> backup_keep
+    // Swipe right (positive deltaX > 50) -> previous photo (browsing / comparing without triage)
     fireEvent.touchStart(swipeTarget, { touches: [{ clientX: 100, clientY: 200 }] });
     fireEvent.touchMove(swipeTarget, { touches: [{ clientX: 220, clientY: 200 }] });
     fireEvent.touchEnd(swipeTarget);
-    expect(onDecision).toHaveBeenCalledWith('bundle-1', 'backup_keep');
+    expect(onPrevious).toHaveBeenCalled();
+    expect(onDecision).not.toHaveBeenCalled();
 
-    // High threshold vertical swipe up (deltaY <= -120) -> backup_only
+    // Swipe up (deltaY < -80) -> reveals Apple iOS 18 details sheet
     fireEvent.touchStart(swipeTarget, { touches: [{ clientX: 200, clientY: 250 }] });
     fireEvent.touchMove(swipeTarget, { touches: [{ clientX: 200, clientY: 130 }] });
     fireEvent.touchEnd(swipeTarget);
-    expect(onDecision).toHaveBeenCalledWith('bundle-1', 'backup_only');
+    expect(screen.getByTestId('photo-details-sheet')).toBeDefined();
+  });
+
+  it('renders FilmstripScrubber and allows jumping between photos', () => {
+    const onSelectIndex = vi.fn();
+    render(
+      <SingleView
+        bundle={mockBundles[0]}
+        bundles={mockBundles}
+        currentIndex={0}
+        totalCount={3}
+        unsortedCount={1}
+        onDecision={onDecision}
+        onSelectIndex={onSelectIndex}
+      />
+    );
+
+    // Scrubber is present
+    expect(screen.getByTestId('filmstrip-scrubber')).toBeDefined();
+    // 3 thumbnails present
+    expect(screen.getByTestId('filmstrip-thumb-0')).toBeDefined();
+    expect(screen.getByTestId('filmstrip-thumb-1')).toBeDefined();
+    expect(screen.getByTestId('filmstrip-thumb-2')).toBeDefined();
+
+    // Clicking thumbnail 2 jumps to index 2
+    fireEvent.click(screen.getByTestId('filmstrip-thumb-2'));
+    expect(onSelectIndex).toHaveBeenCalledWith(2);
+  });
+
+  it('provides visual status badge and auto-advances on decision', () => {
+    vi.useFakeTimers();
+    render(
+      <SingleView
+        bundle={mockBundles[0]}
+        currentIndex={0}
+        totalCount={3}
+        unsortedCount={1}
+        onDecision={onDecision}
+        onNext={onNext}
+      />
+    );
+
+    const trashBtn = screen.getByRole('button', { name: /trash/i });
+    fireEvent.click(trashBtn);
+    expect(onDecision).toHaveBeenCalledWith('bundle-1', 'trash');
+
+    // Status banner appears
+    expect(screen.getByTestId('status-banner')).toBeDefined();
+
+    // Auto-advance triggers after 250ms
+    expect(onNext).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(260);
+    expect(onNext).toHaveBeenCalled();
+    vi.useRealTimers();
   });
 
   it('renders video element for video primary bundles (.mov, .mp4, .m4v) and handles invalid dates gracefully', () => {
