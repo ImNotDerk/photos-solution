@@ -44,11 +44,13 @@ public struct ContentView: View {
 
     public var body: some View {
         ZStack {
-            Color.slate950.ignoresSafeArea()
+            Color.black.ignoresSafeArea()
 
             VStack(spacing: 0) {
-                // Top Global System Bar
-                globalHeaderBar
+                // Top Global System Bar (shown on Grid, Backup, Settings)
+                if selectedTab != .single {
+                    globalHeaderBar
+                }
 
                 // Active Mode View
                 ZStack {
@@ -68,8 +70,10 @@ public struct ContentView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                // Bottom Tactile Segmented Navigation Bar
-                segmentedNavigationBar
+                // Bottom Segmented Navigation Bar (shown on Grid, Backup, Settings)
+                if selectedTab != .single {
+                    segmentedNavigationBar
+                }
             }
         }
         .sheet(isPresented: $showingMonthSheet) {

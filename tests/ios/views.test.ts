@@ -8,6 +8,8 @@ describe('iOS Utilitarian SwiftUI Views Contract Tests (Task 4)', () => {
   const themePath = path.resolve(rootDir, 'ios/PhotoTriage/Views/UtilitarianTheme.swift');
   const monthSelectionPath = path.resolve(rootDir, 'ios/PhotoTriage/Views/MonthSelectionView.swift');
   const singleTriagePath = path.resolve(rootDir, 'ios/PhotoTriage/Views/SingleTriageView.swift');
+  const filmstripPath = path.resolve(rootDir, 'ios/PhotoTriage/Views/FilmstripScrubberView.swift');
+  const detailsSheetPath = path.resolve(rootDir, 'ios/PhotoTriage/Views/PhotoDetailsSheetView.swift');
   const gridTriagePath = path.resolve(rootDir, 'ios/PhotoTriage/Views/GridTriageView.swift');
   const backupProgressPath = path.resolve(rootDir, 'ios/PhotoTriage/Views/BackupProgressView.swift');
   const settingsPath = path.resolve(rootDir, 'ios/PhotoTriage/Views/SettingsView.swift');
@@ -23,6 +25,8 @@ describe('iOS Utilitarian SwiftUI Views Contract Tests (Task 4)', () => {
     expect(fs.existsSync(themePath)).toBe(true);
     expect(fs.existsSync(monthSelectionPath)).toBe(true);
     expect(fs.existsSync(singleTriagePath)).toBe(true);
+    expect(fs.existsSync(filmstripPath)).toBe(true);
+    expect(fs.existsSync(detailsSheetPath)).toBe(true);
     expect(fs.existsSync(gridTriagePath)).toBe(true);
     expect(fs.existsSync(backupProgressPath)).toBe(true);
     expect(fs.existsSync(settingsPath)).toBe(true);
@@ -39,6 +43,8 @@ describe('iOS Utilitarian SwiftUI Views Contract Tests (Task 4)', () => {
       themePath,
       monthSelectionPath,
       singleTriagePath,
+      filmstripPath,
+      detailsSheetPath,
       gridTriagePath,
       backupProgressPath,
       settingsPath,
@@ -123,32 +129,38 @@ describe('iOS Utilitarian SwiftUI Views Contract Tests (Task 4)', () => {
     });
   });
 
-  describe('SingleTriageView Contract Alignment', () => {
+  describe('SingleTriageView Contract Alignment (Apple Native Option B)', () => {
     const code = fs.readFileSync(singleTriagePath, 'utf8');
+    const filmstripCode = fs.readFileSync(filmstripPath, 'utf8');
+    const sheetCode = fs.readFileSync(detailsSheetPath, 'utf8');
 
-    it('contains high-density monospaced metadata bar', () => {
+    it('contains full-bleed edge-to-edge canvas and top navigation bar', () => {
       expect(code).toContain('struct SingleTriageView: View');
-      expect(code).toContain('asset.formattedDimensions');
-      expect(code).toContain('asset.formattedSize');
-      expect(code).toContain('asset.formattedDate');
-      expect(code).toContain('asset.targetYear');
-      expect(code).toContain('asset.targetMonth');
-      expect(code).toContain('DEST: /');
+      expect(code).toContain('nativeTopBar');
+      expect(code).toContain('chevron.left');
+      expect(code).toContain('"Photos"');
+      expect(code).toContain('info.circle');
+      expect(code).toContain('showDetailsSheet = true');
     });
 
-    it('contains three tactile action buttons matching spec', () => {
-      // 1. Trash button
+    it('contains FilmstripScrubberView and standard bottom action toolbar', () => {
+      expect(code).toContain('FilmstripScrubberView()');
+      expect(code).toContain('nativeBottomToolbar');
+      // Action buttons:
       expect(code).toContain('trash.fill');
       expect(code).toContain('"Trash"');
-      expect(code).toContain('applyDecision(.trash)');
-      // 2. HD Only button
-      expect(code).toContain('externaldrive.fill');
+      expect(code).toContain('applyTriageDecision(.trash)');
+
+      expect(code).toContain('externaldrive.badge.arrow.down');
       expect(code).toContain('"HD Only"');
-      expect(code).toContain('applyDecision(.backupOnly)');
-      // 3. HD+Phone button
+      expect(code).toContain('applyTriageDecision(.backupOnly)');
+
       expect(code).toContain('iphone.badge.checkmark');
-      expect(code).toContain('"HD+Phone"');
-      expect(code).toContain('applyDecision(.backupKeep)');
+      expect(code).toContain('"Keep"');
+      expect(code).toContain('applyTriageDecision(.backupKeep)');
+
+      expect(code).toContain('"Prev"');
+      expect(code).toContain('"Next"');
     });
 
     it('contains Undo button wired to triageState.undo()', () => {
@@ -156,26 +168,28 @@ describe('iOS Utilitarian SwiftUI Views Contract Tests (Task 4)', () => {
       expect(code).toContain('triageState.canUndo');
     });
 
-    it('implements swipe gestures: left=trash, right=keep, up=HD only', () => {
-      expect(code).toContain('DragGesture');
-      expect(code).toContain('gestureDecisionHint = .trash');
-      expect(code).toContain('gestureDecisionHint = .backupKeep');
-      expect(code).toContain('gestureDecisionHint = .backupOnly');
-      expect(code).toContain('applyDecision(.trash)');
-      expect(code).toContain('applyDecision(.backupKeep)');
-      expect(code).toContain('applyDecision(.backupOnly)');
+    it('implements horizontal paging swipe gestures and swipe-up sheet trigger', () => {
+      expect(code).toContain('horizontalSwipeGesture');
+      expect(code).toContain('triageState.goToNext()');
+      expect(code).toContain('triageState.goToPrevious()');
+      expect(code).toContain('showDetailsSheet = true');
     });
 
-    it('includes visual decision indicator overlay and pinch-to-zoom gesture', () => {
-      expect(code).toContain('decisionIndicatorOverlay');
+    it('verifies FilmstripScrubberView and PhotoDetailsSheetView contracts', () => {
+      expect(filmstripCode).toContain('struct FilmstripScrubberView: View');
+      expect(filmstripCode).toContain('ScrollViewReader');
+      expect(filmstripCode).toContain('FilmstripThumbnailItem');
+
+      expect(sheetCode).toContain('struct PhotoDetailsSheetView: View');
+      expect(sheetCode).toContain('asset.formattedDimensions');
+      expect(sheetCode).toContain('asset.formattedSize');
+      expect(sheetCode).toContain('asset.targetYear');
+      expect(sheetCode).toContain('asset.targetMonth');
+    });
+
+    it('includes pinch-to-zoom gesture and double-tap zoom', () => {
       expect(code).toContain('MagnificationGesture');
       expect(code).toContain('zoomScale');
-    });
-
-    it('provides Advanced vs Minimal telemetry toggle and live freed storage readout', () => {
-      expect(code).toContain('@AppStorage("isAdvancedModeEnabled")');
-      expect(code).toContain('info.circle');
-      expect(code).toContain('formattedBytesReclaimedOnPhone');
     });
   });
 

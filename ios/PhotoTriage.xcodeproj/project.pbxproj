@@ -19,6 +19,8 @@
 		AA0000012345678900000210 /* GridTriageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000012345678900000110 /* GridTriageView.swift */; };
 		AA0000012345678900000211 /* BackupProgressView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000012345678900000111 /* BackupProgressView.swift */; };
 		AA0000012345678900000212 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000012345678900000112 /* SettingsView.swift */; };
+		AA0000012345678900000214 /* FilmstripScrubberView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000012345678900000115 /* FilmstripScrubberView.swift */; };
+		AA0000012345678900000215 /* PhotoDetailsSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000012345678900000116 /* PhotoDetailsSheetView.swift */; };
 		AA0000012345678900000220 /* Photos.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AA0000012345678900000120 /* Photos.framework */; };
 		AA0000012345678900000221 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AA0000012345678900000121 /* SwiftUI.framework */; };
 		AA0000012345678900000222 /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AA0000012345678900000122 /* UIKit.framework */; };
@@ -39,6 +41,8 @@
 		AA0000012345678900000110 /* GridTriageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GridTriageView.swift; sourceTree = "<group>"; };
 		AA0000012345678900000111 /* BackupProgressView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupProgressView.swift; sourceTree = "<group>"; };
 		AA0000012345678900000112 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		AA0000012345678900000115 /* FilmstripScrubberView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilmstripScrubberView.swift; sourceTree = "<group>"; };
+		AA0000012345678900000116 /* PhotoDetailsSheetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoDetailsSheetView.swift; sourceTree = "<group>"; };
 		AA0000012345678900000113 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		AA0000012345678900000114 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		AA0000012345678900000120 /* Photos.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Photos.framework; path = System/Library/Frameworks/Photos.framework; sourceTree = SDKROOT; };
@@ -110,6 +114,8 @@
 				AA0000012345678900000110 /* GridTriageView.swift */,
 				AA0000012345678900000111 /* BackupProgressView.swift */,
 				AA0000012345678900000112 /* SettingsView.swift */,
+				AA0000012345678900000115 /* FilmstripScrubberView.swift */,
+				AA0000012345678900000116 /* PhotoDetailsSheetView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -213,6 +219,8 @@
 				AA0000012345678900000210 /* GridTriageView.swift in Sources */,
 				AA0000012345678900000211 /* BackupProgressView.swift in Sources */,
 				AA0000012345678900000212 /* SettingsView.swift in Sources */,
+				AA0000012345678900000214 /* FilmstripScrubberView.swift in Sources */,
+				AA0000012345678900000215 /* PhotoDetailsSheetView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

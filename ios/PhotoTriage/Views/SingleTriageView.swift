@@ -6,26 +6,28 @@ import UIKit
 import AppKit
 #endif
 
-/// Utilitarian Single Triage View
-/// Provides high-density, 1-by-1 photo inspection with monospaced metadata,
-/// tactile physical buttons, and rapid swipe gesture classification.
+/// Authentic Apple iOS Photos Full-Bleed Single Triage View
+/// Provides edge-to-edge photo inspection on OLED black, horizontal swiping to compare photos freely,
+/// bottom thumbnail filmstrip scrubber, and standard Apple toolbars with 1-tap auto-advancing triage actions.
 public struct SingleTriageView: View {
     @EnvironmentObject public var triageState: TriageState
     @EnvironmentObject public var photoKitManager: PhotoKitManager
+
+    public var onDismissToGrid: (() -> Void)? = nil
 
     // Image loading state
     @State private var currentImage: UIImage? = nil
     @State private var isLoadingImage = false
 
-    // Zoom and Pan
+    // Zoom and Navigation
     @State private var zoomScale: CGFloat = 1.0
     @State private var dragOffset: CGSize = .zero
-    @State private var gestureDecisionHint: TriageDecision? = nil
+    @State private var transientDecision: TriageDecision? = nil
+    @State private var showDetailsSheet: Bool = false
 
-    // Information density setting
-    @AppStorage("isAdvancedModeEnabled") private var isAdvancedModeEnabled: Bool = false
-
-    public init() {}
+    public init(onDismissToGrid: (() -> Void)? = nil) {
+        self.onDismissToGrid = onDismissToGrid
+    }
 
     public var currentAsset: TriageAsset? {
         triageState.currentAsset
@@ -38,21 +40,18 @@ public struct SingleTriageView: View {
 
     public var body: some View {
         ZStack {
-            Color.slate950.ignoresSafeArea()
+            Color.black.ignoresSafeArea()
 
             if let asset = currentAsset {
                 VStack(spacing: 0) {
-                    // Top Metadata & Progress Header
-                    metadataHeader(for: asset)
+                    // 1. Standard Top Navigation Bar
+                    nativeTopBar
 
-                    // Photo Viewing Canvas with Gesture Support
+                    // 2. Full-Bleed Photo Viewport
                     photoCanvas(for: asset)
 
-                    // Decision Stamp HUD
-                    decisionStatusBar(for: asset)
-
-                    // Bottom Tactile Action Bar
-                    tactileActionBar
+                    // 3. Filmstrip Scrubber & Bottom Toolbar
+                    nativeBottomToolbar
                 }
             } else {
                 emptyStateView
@@ -61,141 +60,89 @@ public struct SingleTriageView: View {
         .task(id: currentAsset?.id) {
             await reloadImage()
         }
+        .sheet(isPresented: $showDetailsSheet) {
+            if let asset = currentAsset {
+                PhotoDetailsSheetView(
+                    asset: asset,
+                    decision: currentDecision
+                )
+            }
+        }
     }
 
-    // MARK: - Metadata Header
+    // MARK: - Top Navigation Bar
 
-    private func metadataHeader(for asset: TriageAsset) -> some View {
-        VStack(spacing: 6) {
-            // Index, Reclaimed Space & Info Toggle Row
-            HStack(spacing: 8) {
-                HStack(spacing: 6) {
-                    Image(systemName: "folder.fill")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundColor(.consoleCyan)
-                    Text("\(triageState.selectedMonth?.displayName ?? "UNKNOWN")")
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
-                        .foregroundColor(.slate100)
-                }
-
-                Spacer()
-
-                // Live Storage Reclaimed Counter
-                if triageState.estimatedBytesReclaimedOnPhone > 0 {
-                    HStack(spacing: 4) {
-                        Image(systemName: "arrow.down.circle.fill")
-                            .font(.system(size: 10, weight: .bold))
-                        Text("FREED \(triageState.formattedBytesReclaimedOnPhone)")
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
-                    }
-                    .foregroundColor(.consoleCyan)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 4)
-                    .background(Color.consoleCyan.opacity(0.16))
-                    .cornerRadius(6)
-                }
-
-                // Progress Counter
+    private var nativeTopBar: some View {
+        HStack(spacing: 12) {
+            // Back to Grid
+            Button {
+                triggerHapticFeedback(0)
+                onDismissToGrid?()
+            } label: {
                 HStack(spacing: 4) {
-                    Text("\(triageState.currentIndex + 1) of \(triageState.totalCount)")
-                        .font(.system(size: 12, weight: .bold, design: .monospaced))
-                        .foregroundColor(.slate200)
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 16, weight: .semibold))
+                    Text("Photos")
+                        .font(.system(size: 16))
                 }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(Color.slate800)
-                .cornerRadius(6)
+                .foregroundColor(.white)
+            }
 
-                // 1-Tap Info Mode Toggle
+            Spacer()
+
+            // Date & Index Counter
+            if let asset = currentAsset {
+                VStack(spacing: 1) {
+                    Text(formattedDisplayDate(for: asset))
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.white)
+                    Text("\(triageState.currentIndex + 1) of \(triageState.totalCount)")
+                        .font(.system(size: 11))
+                        .foregroundColor(.white.opacity(0.6))
+                }
+            }
+
+            Spacer()
+
+            // Undo & Info Buttons
+            HStack(spacing: 16) {
                 Button {
                     triggerHapticFeedback(0)
-                    isAdvancedModeEnabled.toggle()
+                    _ = triageState.undo()
                 } label: {
-                    Image(systemName: isAdvancedModeEnabled ? "info.circle.fill" : "info.circle")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundColor(isAdvancedModeEnabled ? .consoleCyan : .slate400)
-                        .padding(5)
-                        .background(Color.slate800)
-                        .cornerRadius(6)
+                    Image(systemName: "arrow.uturn.backward")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(triageState.canUndo ? .white : .white.opacity(0.25))
+                }
+                .disabled(!triageState.canUndo)
+
+                Button {
+                    triggerHapticFeedback(0)
+                    showDetailsSheet = true
+                } label: {
+                    Image(systemName: "info.circle")
+                        .font(.system(size: 17, weight: .medium))
+                        .foregroundColor(.white)
                 }
             }
-
-            // Minimal Primary Info Line (always visible: Date & Media type badge)
-            HStack(spacing: 8) {
-                Text(asset.formattedDate)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundColor(.slate300)
-
-                Spacer()
-
-                if asset.isLivePhoto {
-                    badgeView(text: "LIVE", color: .consoleCyan)
-                }
-                if asset.isVideo {
-                    badgeView(text: asset.formattedDuration ?? "VIDEO", color: .triageBackupOnly)
-                }
-            }
-
-            // Advanced Telemetry (Conditionally rendered when isAdvancedModeEnabled == true)
-            if isAdvancedModeEnabled {
-                HStack(spacing: 8) {
-                    Text(asset.originalFilename ?? asset.canonicalName)
-                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                        .foregroundColor(.slate200)
-                        .lineLimit(1)
-
-                    Spacer()
-
-                    Text(asset.formattedDimensions)
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundColor(.slate400)
-
-                    Text(asset.formattedSize)
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
-                        .foregroundColor(.slate300)
-                }
-
-                HStack {
-                    Text("CAPTURE: \(asset.capturedAtISO.prefix(19))")
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundColor(.slate400)
-
-                    Spacer()
-
-                    Text("DEST: /\(asset.targetYear)/\(asset.targetMonth)/")
-                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                        .foregroundColor(.consoleCyan)
-                }
-            }
-
-            Rectangle()
-                .fill(Color.slate800)
-                .frame(height: 1)
-                .padding(.top, 2)
         }
         .padding(.horizontal, 16)
-        .padding(.top, 8)
-        .padding(.bottom, 6)
-        .background(Color.slate900)
+        .padding(.vertical, 8)
+        .background(Color(red: 0.08, green: 0.08, blue: 0.09).opacity(0.92))
+        .overlay(
+            Rectangle()
+                .fill(Color.white.opacity(0.12))
+                .frame(height: 0.5),
+            alignment: .bottom
+        )
     }
 
-    private func badgeView(text: String, color: Color) -> some View {
-        Text(text)
-            .font(.system(size: 10, weight: .bold, design: .monospaced))
-            .foregroundColor(color)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(color.opacity(0.18))
-            .cornerRadius(4)
-            .utilitarianBorder(color: color, width: 1, cornerRadius: 4)
-    }
-
-    // MARK: - Photo Canvas
+    // MARK: - Photo Canvas with Horizontal Paging
 
     private func photoCanvas(for asset: TriageAsset) -> some View {
         GeometryReader { geometry in
             ZStack {
-                Color.slate950
+                Color.black
 
                 if let image = currentImage {
                     Image(platformImage: image)
@@ -204,7 +151,7 @@ public struct SingleTriageView: View {
                         .scaleEffect(zoomScale)
                         .offset(dragOffset)
                         .frame(maxWidth: geometry.size.width, maxHeight: geometry.size.height)
-                        .gesture(dragGesture(size: geometry.size))
+                        .gesture(horizontalSwipeGesture)
                         .simultaneousGesture(magnificationGesture)
                         .onTapGesture(count: 2) {
                             withAnimation(.easeInOut(duration: 0.15)) {
@@ -212,27 +159,33 @@ public struct SingleTriageView: View {
                             }
                         }
                 } else if isLoadingImage {
-                    VStack(spacing: 8) {
-                        ProgressView()
-                            .tint(.consoleCyan)
-                        Text("RENDERING ASSET...")
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
-                            .foregroundColor(.slate500)
-                    }
+                    ProgressView()
+                        .tint(.white)
                 } else {
-                    VStack(spacing: 6) {
+                    VStack(spacing: 8) {
                         Image(systemName: "photo")
-                            .font(.system(size: 28))
-                            .foregroundColor(.slate700)
-                        Text("PREVIEW NOT AVAILABLE")
-                            .font(.system(size: 10, design: .monospaced))
-                            .foregroundColor(.slate600)
+                            .font(.system(size: 32))
+                            .foregroundColor(.white.opacity(0.3))
+                        Text("Preview unavailable")
+                            .font(.system(size: 12))
+                            .foregroundColor(.white.opacity(0.5))
                     }
                 }
 
-                // Visual Decision Overlay (Swipe HUD Indicator)
-                if let hint = gestureDecisionHint {
-                    decisionIndicatorOverlay(decision: hint)
+                // Transient Feedback Badge on Triage Selection
+                if let decision = transientDecision {
+                    HStack(spacing: 6) {
+                        Image(systemName: decision.iconName)
+                        Text(decision.title.uppercased())
+                    }
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundColor(decision.color)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 6)
+                    .background(Color.black.opacity(0.85))
+                    .cornerRadius(16)
+                    .overlay(RoundedRectangle(cornerRadius: 16).stroke(decision.color.opacity(0.6), lineWidth: 1))
+                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -254,282 +207,199 @@ public struct SingleTriageView: View {
             }
     }
 
-    private func dragGesture(size: CGSize) -> some Gesture {
+    private var horizontalSwipeGesture: some Gesture {
         DragGesture()
             .onChanged { val in
-                // Only allow swipe triage gestures when not zoomed in
                 guard zoomScale <= 1.05 else { return }
-                dragOffset = val.translation
-
-                let x = val.translation.width
-                let y = val.translation.height
-
-                if y < -80 && abs(y) > abs(x) {
-                    gestureDecisionHint = .backupOnly
-                } else if x < -80 {
-                    gestureDecisionHint = .trash
-                } else if x > 80 {
-                    gestureDecisionHint = .backupKeep
-                } else {
-                    gestureDecisionHint = nil
-                }
+                dragOffset = CGSize(width: val.translation.width, height: 0)
             }
             .onEnded { val in
                 guard zoomScale <= 1.05 else { return }
-                let x = val.translation.width
-                let y = val.translation.height
+                let dx = val.translation.width
+                let dy = val.translation.height
 
-                if y < -80 && abs(y) > abs(x) {
-                    applyDecision(.backupOnly)
-                } else if x < -80 {
-                    applyDecision(.trash)
-                } else if x > 80 {
-                    applyDecision(.backupKeep)
+                if abs(dx) > 50 && abs(dx) > abs(dy) {
+                    if dx < 0 {
+                        // Swipe Left: Next Photo
+                        triggerHapticFeedback(0)
+                        triageState.goToNext()
+                    } else {
+                        // Swipe Right: Previous Photo
+                        triggerHapticFeedback(0)
+                        triageState.goToPrevious()
+                    }
+                } else if dy < -70 && abs(dy) > abs(dx) {
+                    // Swipe Up: Open Apple Details Sheet
+                    triggerHapticFeedback(0)
+                    showDetailsSheet = true
                 }
 
-                dragOffset = .zero
-                gestureDecisionHint = nil
-            }
-    }
-
-    private func applyDecision(_ decision: TriageDecision) {
-        triageState.triageCurrent(as: decision, autoAdvance: true)
-    }
-
-    // MARK: - Decision Overlay & Status
-
-    private func decisionIndicatorOverlay(decision: TriageDecision) -> some View {
-        VStack(spacing: 6) {
-            Image(systemName: decision.iconName)
-                .font(.system(size: 32, weight: .bold))
-                .foregroundColor(decision.color)
-
-            Text(decision.title.uppercased())
-                .font(.system(size: 16, weight: .black, design: .monospaced))
-                .foregroundColor(decision.color)
-
-            Text(decision.subtitle.uppercased())
-                .font(.system(size: 9, weight: .bold, design: .monospaced))
-                .foregroundColor(.slate200)
-        }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 16)
-        .background(Color.slate900.opacity(0.92))
-        .utilitarianBorder(color: decision.color, width: 2, cornerRadius: 4)
-    }
-
-    private func decisionStatusBar(for asset: TriageAsset) -> some View {
-        HStack(spacing: 12) {
-            // Decision Badge
-            HStack(spacing: 8) {
-                Text("STATUS:")
-                    .font(.system(size: 11, weight: .bold, design: .monospaced))
-                    .foregroundColor(.slate400)
-
-                Text(currentDecision.title.uppercased())
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
-                    .foregroundColor(currentDecision.color)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .background(currentDecision.color.opacity(0.18))
-                    .cornerRadius(6)
-                    .utilitarianBorder(color: currentDecision.color, width: 1, cornerRadius: 6)
-            }
-
-            Spacer()
-
-            // Undo Button (Comfortable 38pt height)
-            Button {
-                triggerHapticFeedback(0)
-                triageState.undo()
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "arrow.uturn.backward")
-                        .font(.system(size: 12, weight: .bold))
-                    Text("UNDO")
-                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                withAnimation(.easeOut(duration: 0.15)) {
+                    dragOffset = .zero
                 }
-                .foregroundColor(triageState.canUndo ? .slate100 : .slate600)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 7)
-                .background(triageState.canUndo ? Color.slate800 : Color.slate900)
-                .cornerRadius(8)
-                .utilitarianBorder(color: triageState.canUndo ? .slate600 : .slate800, width: 1, cornerRadius: 8)
             }
-            .disabled(!triageState.canUndo)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-        .background(Color.slate900)
     }
 
-    // MARK: - Tactile Action Bar
+    // MARK: - Bottom Toolbar & Scrubber
 
-    private var tactileActionBar: some View {
-        VStack(spacing: 10) {
+    private var nativeBottomToolbar: some View {
+        VStack(spacing: 0) {
+            // Filmstrip Scrubber
+            FilmstripScrubberView()
+                .padding(.bottom, 2)
+
+            // 0.5pt Hairline Divider
             Rectangle()
-                .fill(Color.slate800)
-                .frame(height: 1)
+                .fill(Color.white.opacity(0.12))
+                .frame(height: 0.5)
 
-            // Primary 3-Way Triage Controls (Comfortable 56pt height!)
-            HStack(spacing: 10) {
-                // Trash Button (Delete from Phone)
-                Button {
-                    triggerHapticFeedback(1)
-                    applyDecision(.trash)
-                } label: {
-                    VStack(spacing: 3) {
-                        HStack(spacing: 6) {
-                            Image(systemName: "trash.fill")
-                                .font(.system(size: 15, weight: .bold))
-                            Text("Trash")
-                                .font(.system(size: 15, weight: .bold, design: .rounded))
-                        }
-                        Text("Delete from phone")
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundColor(.triageTrash.opacity(0.85))
-                    }
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 56)
-                    .background(currentDecision == .trash ? Color.triageTrash.opacity(0.35) : Color.triageTrash.opacity(0.12))
-                    .cornerRadius(12)
-                    .utilitarianBorder(color: .triageTrash, width: currentDecision == .trash ? 2 : 1, cornerRadius: 12)
-                }
-                .foregroundColor(.triageTrash)
-
-                // HD Only Button (Offload to Hard Drive)
-                Button {
-                    triggerHapticFeedback(1)
-                    applyDecision(.backupOnly)
-                } label: {
-                    VStack(spacing: 3) {
-                        HStack(spacing: 6) {
-                            Image(systemName: "externaldrive.fill")
-                                .font(.system(size: 15, weight: .bold))
-                            Text("HD Only")
-                                .font(.system(size: 15, weight: .bold, design: .rounded))
-                        }
-                        Text("Offload to HD")
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundColor(.triageBackupOnly.opacity(0.85))
-                    }
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 56)
-                    .background(currentDecision == .backupOnly ? Color.triageBackupOnly.opacity(0.35) : Color.triageBackupOnly.opacity(0.12))
-                    .cornerRadius(12)
-                    .utilitarianBorder(color: .triageBackupOnly, width: currentDecision == .backupOnly ? 2 : 1, cornerRadius: 12)
-                }
-                .foregroundColor(.triageBackupOnly)
-
-                // HD + Phone Button (Back up and keep)
-                Button {
-                    triggerHapticFeedback(1)
-                    applyDecision(.backupKeep)
-                } label: {
-                    VStack(spacing: 3) {
-                        HStack(spacing: 6) {
-                            Image(systemName: "iphone.badge.checkmark")
-                                .font(.system(size: 15, weight: .bold))
-                            Text("HD+Phone")
-                                .font(.system(size: 15, weight: .bold, design: .rounded))
-                        }
-                        Text("Backup & keep")
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundColor(.triageBackupKeep.opacity(0.85))
-                    }
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 56)
-                    .background(currentDecision == .backupKeep ? Color.triageBackupKeep.opacity(0.35) : Color.triageBackupKeep.opacity(0.12))
-                    .cornerRadius(12)
-                    .utilitarianBorder(color: .triageBackupKeep, width: currentDecision == .backupKeep ? 2 : 1, cornerRadius: 12)
-                }
-                .foregroundColor(.triageBackupKeep)
-            }
-            .padding(.horizontal, 14)
-
-            // Bottom Navigation Stepper Row (44pt touch targets)
-            HStack(spacing: 8) {
+            // 5-Item Apple Action Row
+            HStack(spacing: 0) {
+                // Prev Photo
                 Button {
                     triggerHapticFeedback(0)
                     triageState.goToPrevious()
                 } label: {
-                    HStack(spacing: 5) {
+                    VStack(spacing: 3) {
                         Image(systemName: "chevron.left")
-                        Text("PREV")
+                            .font(.system(size: 17, weight: .medium))
+                        Text("Prev")
+                            .font(.system(size: 9, weight: .medium))
                     }
-                    .font(.system(size: 13, weight: .bold, design: .rounded))
-                    .foregroundColor(triageState.canGoPrevious ? .slate100 : .slate600)
-                    .frame(width: 84, height: 44)
-                    .background(Color.slate800)
-                    .cornerRadius(10)
-                    .utilitarianBorder(color: triageState.canGoPrevious ? .slate700 : .slate800, width: 1, cornerRadius: 10)
+                    .frame(maxWidth: .infinity)
+                    .foregroundColor(triageState.currentIndex > 0 ? .white : .white.opacity(0.25))
                 }
-                .disabled(!triageState.canGoPrevious)
+                .disabled(triageState.currentIndex == 0)
 
-                Spacer()
+                // Trash Action
+                Button {
+                    applyTriageDecision(.trash)
+                } label: {
+                    VStack(spacing: 3) {
+                        Image(systemName: "trash.fill")
+                            .font(.system(size: 20, weight: .medium))
+                        Text("Trash")
+                            .font(.system(size: 10, weight: .medium))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .foregroundColor(.triageTrash)
+                }
 
-                // Gesture hint
-                Text("SWIPE: ◀ TRASH | ▲ HD | KEEP ▶")
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                    .foregroundColor(.slate400)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.85)
+                // HD Only Action
+                Button {
+                    applyTriageDecision(.backupOnly)
+                } label: {
+                    VStack(spacing: 3) {
+                        Image(systemName: "externaldrive.badge.arrow.down")
+                            .font(.system(size: 20, weight: .medium))
+                        Text("HD Only")
+                            .font(.system(size: 10, weight: .medium))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .foregroundColor(.triageBackupOnly)
+                }
 
-                Spacer()
+                // Keep Action
+                Button {
+                    applyTriageDecision(.backupKeep)
+                } label: {
+                    VStack(spacing: 3) {
+                        Image(systemName: "iphone.badge.checkmark")
+                            .font(.system(size: 20, weight: .medium))
+                        Text("Keep")
+                            .font(.system(size: 10, weight: .medium))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .foregroundColor(.triageBackupKeep)
+                }
 
+                // Next Photo
                 Button {
                     triggerHapticFeedback(0)
                     triageState.goToNext()
                 } label: {
-                    HStack(spacing: 5) {
-                        Text("NEXT")
+                    VStack(spacing: 3) {
                         Image(systemName: "chevron.right")
+                            .font(.system(size: 17, weight: .medium))
+                        Text("Next")
+                            .font(.system(size: 9, weight: .medium))
                     }
-                    .font(.system(size: 13, weight: .bold, design: .rounded))
-                    .foregroundColor(triageState.canGoNext ? .slate100 : .slate600)
-                    .frame(width: 84, height: 44)
-                    .background(Color.slate800)
-                    .cornerRadius(10)
-                    .utilitarianBorder(color: triageState.canGoNext ? .slate700 : .slate800, width: 1, cornerRadius: 10)
+                    .frame(maxWidth: .infinity)
+                    .foregroundColor(triageState.currentIndex < triageState.totalCount - 1 ? .white : .white.opacity(0.25))
                 }
-                .disabled(!triageState.canGoNext)
+                .disabled(triageState.currentIndex >= triageState.totalCount - 1)
             }
-            .padding(.horizontal, 14)
-            .padding(.bottom, 8)
+            .padding(.top, 10)
+            .padding(.bottom, 6)
         }
-        .background(Color.slate950)
+        .background(Color(red: 0.08, green: 0.08, blue: 0.09).opacity(0.92))
+    }
+
+    // MARK: - Decision Handling
+
+    private func applyTriageDecision(_ decision: TriageDecision) {
+        triggerHapticFeedback(1)
+        withAnimation(.easeInOut(duration: 0.15)) {
+            transientDecision = decision
+        }
+        triageState.triageCurrent(as: decision, autoAdvance: false)
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                transientDecision = nil
+                triageState.goToNext()
+            }
+        }
     }
 
     // MARK: - Helpers
+
+    private func formattedDisplayDate(for asset: TriageAsset) -> String {
+        guard let date = asset.creationDate else {
+            return asset.formattedDate
+        }
+        let df = DateFormatter()
+        df.dateStyle = .medium
+        df.timeStyle = .none
+        return df.string(from: date)
+    }
 
     private func reloadImage() async {
         guard let asset = currentAsset else {
             currentImage = nil
             return
         }
-
         isLoadingImage = true
         zoomScale = 1.0
         dragOffset = .zero
 
-        let img = await photoKitManager.loadFullImage(for: asset)
-        currentImage = img
-        isLoadingImage = false
+        let loaded = await photoKitManager.loadFullImage(for: asset)
+        await MainActor.run {
+            self.currentImage = loaded
+            self.isLoadingImage = false
+        }
+    }
+
+    private func triggerHapticFeedback(_ style: Int) {
+        #if canImport(UIKit)
+        if style == 1 {
+            let feedback = UINotificationFeedbackGenerator()
+            feedback.notificationOccurred(.success)
+        } else {
+            let feedback = UIImpactFeedbackGenerator(style: .light)
+            feedback.impactOccurred()
+        }
+        #endif
     }
 
     private var emptyStateView: some View {
         VStack(spacing: 12) {
-            Image(systemName: "folder.badge.questionmark")
-                .font(.system(size: 32))
-                .foregroundColor(.slate600)
-
-            Text("NO BATCH LOADED")
-                .font(.system(size: 14, weight: .bold, design: .monospaced))
-                .foregroundColor(.slate300)
-
-            Text("Select a calendar month from Directory to start review.")
-                .font(.system(size: 11, design: .monospaced))
-                .foregroundColor(.slate500)
+            Image(systemName: "photo.stack")
+                .font(.system(size: 40))
+                .foregroundColor(.white.opacity(0.3))
+            Text("No Photos Available")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundColor(.white)
         }
     }
 }
