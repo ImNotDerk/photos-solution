@@ -209,6 +209,30 @@ describe('SingleView Component', () => {
     fireEvent.touchEnd(swipeTarget);
     expect(onDecision).toHaveBeenCalledWith('bundle-1', 'backup_only');
   });
+
+  it('renders video element for video primary bundles (.mov, .mp4, .m4v) and handles invalid dates gracefully', () => {
+    const mp4Bundle: AssetBundle = {
+      ...mockBundles[2],
+      previewPath: '/staging/IMG_1003.MP4',
+      capturedAt: 'invalid-date-string',
+      files: [{ path: '/staging/IMG_1003.MP4', filename: 'IMG_1003.MP4', ext: '.MP4', size: 12000000, role: 'primary' }],
+    };
+
+    const { container } = render(
+      <SingleView
+        bundle={mp4Bundle}
+        currentIndex={2}
+        totalCount={3}
+        unsortedCount={1}
+        onDecision={onDecision}
+      />
+    );
+
+    const videoEl = container.querySelector('video');
+    expect(videoEl).toBeDefined();
+    expect(videoEl?.getAttribute('src')).toBe('/staging/IMG_1003.MP4');
+    expect(screen.getByText('invalid-date-string')).toBeDefined();
+  });
 });
 
 describe('GridView Component', () => {
@@ -456,7 +480,7 @@ describe('DesktopStatus Component', () => {
       />
     );
 
-    expect(screen.getByText(/MOUNTED/i)).toBeDefined();
+    expect(screen.getAllByText(/MOUNTED/i).length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('/Volumes/PhotosDrive')).toBeDefined();
     expect(screen.getByText('/staging')).toBeDefined();
 
@@ -478,7 +502,21 @@ describe('DesktopStatus Component', () => {
       />
     );
 
-    expect(screen.getByText(/DISCONNECTED/i)).toBeDefined();
+    expect(screen.getAllByText(/DISCONNECTED/i).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('renders live activity stream console with custom or default logs', () => {
+    render(
+      <DesktopStatus
+        sessionState={mockSessionState}
+        onRefreshScan={onRefreshScan}
+        onRunBackup={onRunBackup}
+        activityLogs={['[12:00:00] VERIFIED: [OK] Checksums verified for 42 files']}
+      />
+    );
+
+    expect(screen.getByText(/Live Activity Stream \/\/ Verification Log/i)).toBeDefined();
+    expect(screen.getByText(/\[12:00:00\] VERIFIED: \[OK\] Checksums verified for 42 files/i)).toBeDefined();
   });
 });
 

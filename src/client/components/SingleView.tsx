@@ -21,6 +21,17 @@ export function formatBytes(bytes: number): string {
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
 }
 
+export function formatCapturedDate(dateStr?: string): string {
+  if (!dateStr) return 'Unknown';
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr || 'Unknown';
+    return d.toISOString().replace('T', ' ').slice(0, 16);
+  } catch {
+    return dateStr || 'Unknown';
+  }
+}
+
 export const SingleView: React.FC<SingleViewProps> = ({
   bundle,
   currentIndex,
@@ -220,7 +231,7 @@ export const SingleView: React.FC<SingleViewProps> = ({
         </div>
 
         {/* Media Preview */}
-        {isVideoPrimary && bundle.previewPath.toLowerCase().endsWith('.mov') ? (
+        {isVideoPrimary && ['.mov', '.mp4', '.m4v'].some((ext) => bundle.previewPath.toLowerCase().endsWith(ext)) ? (
           <video
             src={bundle.previewPath}
             controls
@@ -249,7 +260,7 @@ export const SingleView: React.FC<SingleViewProps> = ({
         <div>
           <span className="text-slate-500 block text-[10px] uppercase">Captured</span>
           <span title={bundle.capturedAt}>
-            {bundle.capturedAt ? new Date(bundle.capturedAt).toISOString().replace('T', ' ').slice(0, 16) : 'Unknown'}
+            {formatCapturedDate(bundle.capturedAt)}
           </span>
         </div>
         <div>

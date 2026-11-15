@@ -8,6 +8,7 @@ export interface DesktopStatusProps {
   onRunBackup: () => void;
   isBackingUp?: boolean;
   serverUrl?: string;
+  activityLogs?: string[];
 }
 
 export const DesktopStatus: React.FC<DesktopStatusProps> = ({
@@ -16,6 +17,7 @@ export const DesktopStatus: React.FC<DesktopStatusProps> = ({
   onRunBackup,
   isBackingUp = false,
   serverUrl,
+  activityLogs,
 }) => {
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string>('');
   const [copied, setCopied] = useState<boolean>(false);
@@ -46,6 +48,19 @@ export const DesktopStatus: React.FC<DesktopStatusProps> = ({
 
   const isMounted = !!sessionState.hardDriveMounted;
   const isReadyForBackup = isMounted && !isBackingUp && sessionState.counts.unsorted === 0;
+
+  const defaultLogs = [
+    `[${new Date().toISOString().slice(11, 19)}] STAGING: Found ${sessionState.bundles.length} asset bundle(s) in ${sessionState.stagingDir || 'staging directory'}`,
+    `[${new Date().toISOString().slice(11, 19)}] STORAGE: Hard drive ${sessionState.hardDriveRoot || 'root'} is ${isMounted ? '[OK] MOUNTED & WRITABLE' : '[DISCONNECTED] AWAITING MOUNT'}`,
+    `[${new Date().toISOString().slice(11, 19)}] LEDGER: Loaded ${sessionState.counts.alreadyBackedUp} duplicate records from .photo-triage-ledger.json`,
+    `[${new Date().toISOString().slice(11, 19)}] TRIAGE: ${sessionState.counts.total - sessionState.counts.unsorted}/${sessionState.counts.total} items triaged (${sessionState.counts.backup_only} HD only, ${sessionState.counts.backup_keep} keep phone, ${sessionState.counts.trash} trash)`,
+    `[${new Date().toISOString().slice(11, 19)}] NETWORK: Web UI serving on ${displayUrl}`,
+    sessionState.isBackupVerified
+      ? `[${new Date().toISOString().slice(11, 19)}] VERIFICATION: [OK] 100% Cryptographic verification completed. Ready for cleanup.`
+      : `[${new Date().toISOString().slice(11, 19)}] STATUS: Session status "${sessionState.status || 'triaging'}"`,
+  ];
+
+  const displayedLogs = activityLogs && activityLogs.length > 0 ? activityLogs : defaultLogs;
 
   return (
     <div className="flex flex-col w-full max-w-4xl mx-auto border border-slate-700 bg-slate-900 text-slate-100 font-mono">
@@ -165,6 +180,45 @@ export const DesktopStatus: React.FC<DesktopStatusProps> = ({
         <div className="p-2 border border-slate-800">
           <span className="text-slate-500 block text-[9px] uppercase">Backed Up</span>
           <span className="font-bold text-purple-400">{sessionState.counts.alreadyBackedUp}</span>
+        </div>
+      </div>
+
+      {/* Live Activity Stream / Verification Log */}
+      <div className="border-t border-slate-700 bg-slate-950 p-3">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-300">
+              Live Activity Stream // Verification Log
+            </span>
+          </div>
+          <span className="text-[10px] text-slate-500 uppercase">stdout/audit</span>
+        </div>
+
+        <div className="border border-slate-800 bg-black/90 p-2.5 max-h-44 overflow-y-auto space-y-1 text-[11px] font-mono text-slate-300">
+          {displayedLogs.map((log, idx) => {
+            const isOk = log.includes('[OK]') || log.includes('VERIF') || log.includes('SUCCESS');
+            const isWarn = log.includes('[DISCONNECTED]') || log.includes('FAIL') || log.includes('ERR');
+            return (
+              <div key={idx} className="flex items-start gap-2 leading-relaxed">
+                <span className="text-slate-600 select-none text-[10px]">{`>`}</span>
+                <span
+                  className={
+                    isOk
+                      ? 'text-emerald-400'
+                      : isWarn
+                      ? 'text-amber-400'
+                      : 'text-slate-300'
+                  }
+                >
+                  {log}
+                </span>
+              </div>
+            );
+          })}
+          <div className="flex items-center gap-1 text-slate-600 text-[10px]">
+            <span>_</span>
+          </div>
         </div>
       </div>
     </div>

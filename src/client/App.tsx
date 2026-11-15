@@ -47,6 +47,14 @@ export const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [infoMsg, setInfoMsg] = useState<string | null>(null);
+  const [activityLogs, setActivityLogs] = useState<string[]>([
+    `[${new Date().toISOString().slice(11, 19)}] SYSTEM: UI initialized, connecting to Fastify API`,
+  ]);
+
+  const addLog = (msg: string) => {
+    const time = new Date().toISOString().slice(11, 19);
+    setActivityLogs((prev) => [...prev, `[${time}] ${msg}`]);
+  };
 
   // Fetch session data from backend
   const fetchSession = useCallback(async (scan = false) => {
@@ -60,6 +68,7 @@ export const App: React.FC = () => {
       }
       const data: SessionState = await res.json();
       setSessionState(data);
+      addLog(`SESSION: Sync completed with ${data.bundles.length} bundle(s) (${data.counts.unsorted} unsorted)`);
 
       // If backup is already verified or cleanup_ready, also load cleanup batch
       if (data.isBackupVerified || data.status === 'cleanup_ready' || data.status === 'completed') {
@@ -128,6 +137,7 @@ export const App: React.FC = () => {
         throw new Error(`Failed to record triage decision: HTTP ${res.status}`);
       }
       const data = await res.json();
+      addLog(`TRIAGE: Bundle ${bundleId} marked ${decision}`);
       if (data.counts) {
         setSessionState((prev) => ({
           ...prev,
@@ -156,6 +166,7 @@ export const App: React.FC = () => {
         throw new Error(`Failed to apply batch decision: HTTP ${res.status}`);
       }
       const data = await res.json();
+      addLog(`BATCH: ${bundleIds.length} items assigned to ${decision}`);
       if (data.counts) {
         setSessionState((prev) => ({
           ...prev,
@@ -189,6 +200,7 @@ export const App: React.FC = () => {
         throw new Error(`Failed to undo triage decision: HTTP ${res.status}`);
       }
       const data = await res.json();
+      addLog(`UNDO: Reverted bundle ${lastItem.bundleId} to ${lastItem.prevDecision}`);
       if (data.counts) {
         setSessionState((prev) => ({
           ...prev,
@@ -222,6 +234,7 @@ export const App: React.FC = () => {
       }
 
       setInfoMsg(`Backup verified! Copied & verified ${data.verifiedCount} files.`);
+      addLog(`VERIFIED: [OK] Backup verified: ${data.verifiedCount} files confirmed with SHA-256`);
       await fetchSession();
 
       // Automatically switch to cleanup view
@@ -253,6 +266,7 @@ export const App: React.FC = () => {
       if (data.session) {
         setSessionState(data.session);
       }
+      addLog('CLEANUP: [OK] Photo batch cleanup completed');
       setInfoMsg('Photo batch cleanup marked as completed!');
     } catch (err: any) {
       setErrorMsg(err.message);
@@ -417,6 +431,7 @@ export const App: React.FC = () => {
             onRefreshScan={() => fetchSession(true)}
             onRunBackup={handleRunBackup}
             isBackingUp={isLoading}
+            activityLogs={activityLogs}
           />
         )}
       </main>
