@@ -3,6 +3,7 @@ import * as nodeFs from 'fs';
 import * as path from 'path';
 import type { AssetBundle, AssetFile, BackupResult, LedgerEntry } from '../types/index.js';
 import { computeFileHash, loadLedger, saveLedger } from './ledger.js';
+import { resolveTargetSubdir, DEFAULT_FOLDER_FORMAT } from './config.js';
 
 /**
  * Finds the primary asset file in a bundle using standard precedence:
@@ -106,6 +107,8 @@ interface PlannedBundle {
 
 export interface BackupOptions {
   copyFile?: (src: string, dest: string) => Promise<void>;
+  folderFormat?: string;
+  deviceName?: string;
 }
 
 /**
@@ -201,7 +204,9 @@ export async function executeBackup(
         continue;
       }
 
-      const destDir = path.join(hardDriveRoot, targetYear, targetMonth);
+      const folderFormat = options?.folderFormat || DEFAULT_FOLDER_FORMAT;
+      const subDir = resolveTargetSubdir(folderFormat, { targetYear, targetMonth }, options?.deviceName);
+      const destDir = path.join(hardDriveRoot, subDir);
       if (!isPathInsideRoot(destDir, hardDriveRoot)) {
         errors.push(`Resolved destDir escapes hardDriveRoot for bundle ${bundle.id}: "${destDir}"`);
         continue;

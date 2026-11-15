@@ -589,5 +589,17 @@ describe('App Controller Component', () => {
     const systemTab = screen.getByRole('button', { name: /system/i });
     fireEvent.click(systemTab);
     expect(await screen.findByText(/Mobile Safari Connection/i)).toBeDefined();
+
+    // Open Settings Modal
+    const settingsBtn = screen.getByRole('button', { name: /settings/i });
+    fireEvent.click(settingsBtn);
+    expect(await screen.findByText(/Backup Destination Settings/i)).toBeDefined();
+    expect(screen.getByRole('button', { name: /Browse in Finder/i })).toBeDefined();
+    expect(screen.getByText(/Folder Hierarchy Preset/i)).toBeDefined();
+    expect(screen.getByText(/Destination Example Preview/i)).toBeDefined();
+
+    // Close Settings Modal
+    const escBtn = screen.getByRole('button', { name: /esc/i });
+    fireEvent.click(escBtn);
   });
 });

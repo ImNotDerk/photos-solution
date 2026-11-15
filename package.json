@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
+    "build:menubar": "bash macos/build-menubar-app.sh",
     "start": "tsx src/server/index.ts"
   },
   "dependencies": {

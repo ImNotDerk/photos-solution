@@ -8,6 +8,7 @@ import fastifyStatic from '@fastify/static';
 import fastifyMultipart from '@fastify/multipart';
 import QRCode from 'qrcode';
 import { routes, defaultSessionManager, SessionManager } from './routes.js';
+import { loadConfigSync } from './config.js';
 
 export interface ServerOptions {
   stagingDir?: string;
@@ -126,6 +127,15 @@ export function detectHardDriveRoot(customDrive?: string): string {
 
   if (process.env.HARD_DRIVE_ROOT && process.env.HARD_DRIVE_ROOT.trim().length > 0) {
     return path.resolve(expandHome(process.env.HARD_DRIVE_ROOT.trim()));
+  }
+
+  // Check saved user configuration
+  const saved = loadConfigSync();
+  if (saved.hardDriveRoot && saved.hardDriveRoot.trim().length > 0) {
+    const resolvedSaved = path.resolve(expandHome(saved.hardDriveRoot.trim()));
+    if (fs.existsSync(resolvedSaved) || resolvedSaved !== '/Volumes') {
+      return resolvedSaved;
+    }
   }
 
   // Auto-detect mounted external volume inside /Volumes

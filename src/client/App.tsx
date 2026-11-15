@@ -11,6 +11,7 @@ import { SingleView } from './components/SingleView.js';
 import { GridView } from './components/GridView.js';
 import { CleanupView } from './components/CleanupView.js';
 import { DesktopStatus } from './components/DesktopStatus.js';
+import { SettingsModal } from './components/SettingsModal.js';
 
 interface UndoItem {
   bundleId: string;
@@ -46,6 +47,7 @@ export const App: React.FC = () => {
   const [undoStack, setUndoStack] = useState<UndoItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isImporting, setIsImporting] = useState<boolean>(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [infoMsg, setInfoMsg] = useState<string | null>(null);
   const [activityLogs, setActivityLogs] = useState<string[]>([
@@ -384,6 +386,13 @@ export const App: React.FC = () => {
           >
             System
           </button>
+          <button
+            onClick={() => setIsSettingsOpen(true)}
+            className="px-2.5 py-1 border border-slate-800 bg-slate-900 text-slate-400 hover:text-slate-200 transition-colors"
+            title="Configure Backup Destination & Presets"
+          >
+            Settings
+          </button>
         </nav>
       </header>
 
@@ -459,9 +468,20 @@ export const App: React.FC = () => {
             onRunBackup={handleRunBackup}
             isBackingUp={isLoading}
             activityLogs={activityLogs}
+            onOpenSettings={() => setIsSettingsOpen(true)}
           />
         )}
       </main>
+
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        onSaved={(cfg) => {
+          setSessionState((prev) => ({ ...prev, hardDriveRoot: cfg.hardDriveRoot }));
+          addLog(`SETTINGS: Backup destination updated to ${cfg.hardDriveRoot} (${cfg.folderFormat})`);
+          fetchSession();
+        }}
+      />
     </div>
   );
 };

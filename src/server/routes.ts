@@ -28,6 +28,7 @@ import {
   LEDGER_BACKUP_FILENAME,
 } from './ledger.js';
 import { executeBackup, applySuffix, isPathInsideRoot } from './backup.js';
+import { loadConfig, saveConfig, pickFolderWithFinder, FOLDER_FORMAT_PRESETS, expandHome } from './config.js';
 
 export const ALLOWED_UPLOAD_ROLES = new Set(['primary', 'live_video', 'edit_sidecar', 'edited_render']);
 
@@ -259,8 +260,15 @@ export const routes: FastifyPluginAsync<RoutesOptions> = async (
 
     const currentState = manager.getState();
 
-    // Inspect hard drive mount status, auto-resolving /Volumes to mounted external disk if available
+    // Inspect hard drive mount status, auto-resolving from config or /Volumes if available
     let hardDriveRootToUse = currentState.hardDriveRoot;
+    if (!hardDriveRootToUse) {
+      const cfg = await loadConfig();
+      if (cfg.hardDriveRoot) {
+        hardDriveRootToUse = cfg.hardDriveRoot;
+        manager.setState({ hardDriveRoot: hardDriveRootToUse });
+      }
+    }
     let hardDriveMounted = await isHardDriveMounted(hardDriveRootToUse);
     if (!hardDriveMounted && (hardDriveRootToUse === '/Volumes' || !hardDriveRootToUse)) {
       try {
@@ -392,6 +400,91 @@ export const routes: FastifyPluginAsync<RoutesOptions> = async (
   });
 
   /**
+   * GET /api/config
+   * Returns current configuration and available folder presets.
+   */
+  fastify.get('/api/config', async (_request, reply) => {
+    const config = await loadConfig();
+    return reply.send({
+      config,
+      presets: FOLDER_FORMAT_PRESETS,
+    });
+  });
+
+  /**
+   * POST /api/config
+   * Updates configuration settings (hardDriveRoot, folderFormat, deviceName).
+   */
+  fastify.post<{
+    Body: {
+      hardDriveRoot?: string;
+      folderFormat?: string;
+      deviceName?: string;
+    };
+  }>('/api/config', async (request, reply) => {
+    const { hardDriveRoot, folderFormat, deviceName } = request.body || {};
+
+    let expandedRoot: string | undefined = undefined;
+    if (hardDriveRoot !== undefined) {
+      expandedRoot = expandHome(hardDriveRoot.trim());
+      const err = validateSafeDirectoryInput(expandedRoot);
+      if (err) return reply.status(400).send({ error: err });
+    }
+
+    if (folderFormat !== undefined) {
+      if (typeof folderFormat !== 'string' || folderFormat.trim().length === 0) {
+        return reply.status(400).send({ error: 'folderFormat must be a non-empty string' });
+      }
+      if (folderFormat.includes('..') || folderFormat.includes('\0')) {
+        return reply.status(400).send({ error: 'folderFormat contains invalid characters' });
+      }
+    }
+
+    const updated = await saveConfig({
+      ...(expandedRoot !== undefined ? { hardDriveRoot: expandedRoot } : {}),
+      ...(folderFormat !== undefined ? { folderFormat: folderFormat.trim() } : {}),
+      ...(deviceName !== undefined ? { deviceName: deviceName.trim() } : {}),
+    });
+
+    if (expandedRoot) {
+      manager.setState({ hardDriveRoot: updated.hardDriveRoot });
+    }
+
+    return reply.send({
+      success: true,
+      config: updated,
+    });
+  });
+
+  /**
+   * POST /api/choose-folder
+   * Prompts the user with the native macOS Finder folder picker dialog.
+   */
+  fastify.post('/api/choose-folder', async (_request, reply) => {
+    try {
+      const chosenPath = await pickFolderWithFinder();
+      if (!chosenPath) {
+        return reply.send({
+          success: false,
+          cancelled: true,
+        });
+      }
+      const err = validateSafeDirectoryInput(chosenPath);
+      if (err) {
+        return reply.status(400).send({ error: err });
+      }
+      return reply.send({
+        success: true,
+        path: chosenPath,
+      });
+    } catch (err: any) {
+      return reply.status(500).send({
+        error: err?.message || 'Failed to open Finder folder picker',
+      });
+    }
+  });
+
+  /**
    * POST /api/triage
    * Updates decision for one or multiple bundles.
    */
@@ -487,7 +580,11 @@ export const routes: FastifyPluginAsync<RoutesOptions> = async (
     }
 
     try {
-      const result = await executeBackup(bundlesToBackup, hardDriveRoot, stagingDir);
+      const config = await loadConfig();
+      const result = await executeBackup(bundlesToBackup, hardDriveRoot, stagingDir, {
+        folderFormat: config.folderFormat,
+        deviceName: config.deviceName,
+      });
 
       if (result.success) {
         // Mark backed up bundles as alreadyBackedUp

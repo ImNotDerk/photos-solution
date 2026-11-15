@@ -9,6 +9,7 @@ export interface DesktopStatusProps {
   isBackingUp?: boolean;
   serverUrl?: string;
   activityLogs?: string[];
+  onOpenSettings?: () => void;
 }
 
 export const DesktopStatus: React.FC<DesktopStatusProps> = ({
@@ -18,6 +19,7 @@ export const DesktopStatus: React.FC<DesktopStatusProps> = ({
   isBackingUp = false,
   serverUrl,
   activityLogs,
+  onOpenSettings,
 }) => {
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string>('');
   const [copied, setCopied] = useState<boolean>(false);
@@ -127,7 +129,18 @@ export const DesktopStatus: React.FC<DesktopStatusProps> = ({
               <span className="text-slate-200 break-all select-all">{sessionState.stagingDir || 'Not specified'}</span>
             </div>
             <div>
-              <span className="text-slate-500 block text-[10px] uppercase">External Hard Drive Root</span>
+              <div className="flex items-center justify-between mb-0.5">
+                <span className="text-slate-500 block text-[10px] uppercase">External Hard Drive Root</span>
+                {onOpenSettings && (
+                  <button
+                    type="button"
+                    onClick={onOpenSettings}
+                    className="text-[10px] text-sky-400 hover:text-sky-300 underline font-bold uppercase"
+                  >
+                    Configure...
+                  </button>
+                )}
+              </div>
               <span className="text-slate-200 break-all select-all">{sessionState.hardDriveRoot || 'Not specified'}</span>
             </div>
             <div>
