@@ -22,6 +22,7 @@
 		AA0000012345678900000220 /* Photos.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AA0000012345678900000120 /* Photos.framework */; };
 		AA0000012345678900000221 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AA0000012345678900000121 /* SwiftUI.framework */; };
 		AA0000012345678900000222 /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AA0000012345678900000122 /* UIKit.framework */; };
+		AA0000012345678900000213 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AA0000012345678900000114 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -39,6 +40,7 @@
 		AA0000012345678900000111 /* BackupProgressView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupProgressView.swift; sourceTree = "<group>"; };
 		AA0000012345678900000112 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		AA0000012345678900000113 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		AA0000012345678900000114 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		AA0000012345678900000120 /* Photos.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Photos.framework; path = System/Library/Frameworks/Photos.framework; sourceTree = SDKROOT; };
 		AA0000012345678900000121 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		AA0000012345678900000122 /* UIKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UIKit.framework; path = System/Library/Frameworks/UIKit.framework; sourceTree = SDKROOT; };
@@ -75,6 +77,7 @@
 				AA0000012345678900000005 /* Models */,
 				AA0000012345678900000006 /* Services */,
 				AA0000012345678900000007 /* Views */,
+				AA0000012345678900000114 /* Assets.xcassets */,
 				AA0000012345678900000113 /* Info.plist */,
 			);
 			path = PhotoTriage;
@@ -187,6 +190,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AA0000012345678900000213 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
