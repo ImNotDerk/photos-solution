@@ -68,22 +68,22 @@ public struct BackupProgressView: View {
 
     public var body: some View {
         ZStack {
-            Color.slate950.ignoresSafeArea()
+            Color.black.ignoresSafeArea()
 
             VStack(spacing: 0) {
                 // Header Status Bar
                 headerBar
 
-                // Main Console & Telemetry
+                // Main Telemetry & Cards
                 ScrollView {
-                    VStack(spacing: 12) {
-                        // Diagnostic Metrics Card
+                    VStack(spacing: 14) {
+                        // Diagnostic Metrics Card (Apple Grouped Style)
                         metricsCard
 
                         // Progress Gauges
                         progressSection
 
-                        // Real-time Monospaced Log Console
+                        // Real-time Integrity & Ledger Telemetry
                         consoleLogCard
 
                         // Final Completion Summary if done
@@ -96,7 +96,7 @@ public struct BackupProgressView: View {
                             errorBanner(message: error)
                         }
                     }
-                    .padding(12)
+                    .padding(14)
                 }
 
                 // Bottom Action Button
@@ -108,69 +108,70 @@ public struct BackupProgressView: View {
     // MARK: - Header Bar
 
     private var headerBar: some View {
-        VStack(spacing: 4) {
-            HStack {
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("BACKUP // SYNC ENGINE")
-                        .font(.system(size: 13, weight: .bold, design: .monospaced))
-                        .foregroundColor(.consoleCyan)
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundColor(.white)
 
                     Text("TARGET: \(networkManager.cleanServerUrl)")
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundColor(.slate400)
+                        .font(.system(size: 11))
+                        .foregroundColor(.white.opacity(0.5))
                 }
 
                 Spacer()
 
                 // Server Status Indicator
-                HStack(spacing: 4) {
+                HStack(spacing: 5) {
                     Circle()
                         .fill(networkManager.isReachable ? Color.triageBackupKeep : Color.triageTrash)
-                        .frame(width: 8, height: 8)
+                        .frame(width: 7, height: 7)
 
                     Text(networkManager.isReachable ? "ONLINE" : "OFFLINE")
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .font(.system(size: 11, weight: .semibold))
                         .foregroundColor(networkManager.isReachable ? .triageBackupKeep : .triageTrash)
                 }
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
-                .background(Color.slate800)
-                .utilitarianBorder(color: .slate700, width: 1, cornerRadius: 2)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 4)
+                .background(Color.white.opacity(0.1))
+                .clipShape(Capsule())
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, 16)
             .padding(.top, 10)
-            .padding(.bottom, 6)
+            .padding(.bottom, 10)
 
             Rectangle()
-                .fill(Color.slate800)
-                .frame(height: 1)
+                .fill(Color.white.opacity(0.12))
+                .frame(height: 0.5)
         }
-        .background(Color.slate900)
+        .background(Color(red: 0.08, green: 0.08, blue: 0.09).opacity(0.95))
     }
 
     // MARK: - Metrics Card
 
     private var metricsCard: some View {
-        VStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text("BATCH METRICS:")
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
-                    .foregroundColor(.slate400)
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(.white.opacity(0.6))
                 Spacer()
                 Text("\(triageState.selectedMonth?.displayName ?? "UNKNOWN")")
-                    .font(.system(size: 11, weight: .bold, design: .monospaced))
-                    .foregroundColor(.slate200)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.white)
             }
 
             Rectangle()
-                .fill(Color.slate700)
-                .frame(height: 1)
+                .fill(Color.white.opacity(0.1))
+                .frame(height: 0.5)
 
-            HStack(spacing: 12) {
+            HStack(spacing: 10) {
                 metricItem(
                     label: "TO UPLOAD",
                     value: "\(itemsToUpload.count)",
-                    color: .consoleCyan,
+                    color: .blue,
+                    icon: "externaldrive.fill",
                     subtext: "HD Only + Keep"
                 )
 
@@ -178,6 +179,7 @@ public struct BackupProgressView: View {
                     label: "TO PURGE",
                     value: "\(itemsToDelete.count)",
                     color: .triageTrash,
+                    icon: "trash.fill",
                     subtext: "Trash + HD Only"
                 )
 
@@ -185,78 +187,86 @@ public struct BackupProgressView: View {
                     label: "KEEP ON PHONE",
                     value: "\(itemsToKeep.count)",
                     color: .triageBackupKeep,
+                    icon: "iphone.badge.checkmark",
                     subtext: "Preserved"
                 )
             }
         }
-        .padding(10)
-        .background(Color.slate900)
-        .utilitarianBorder(color: .slate800, width: 1, cornerRadius: 4)
+        .padding(14)
+        .background(Color(red: 0.11, green: 0.11, blue: 0.13))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
-    private func metricItem(label: String, value: String, color: Color, subtext: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(label)
-                .font(.system(size: 9, weight: .bold, design: .monospaced))
-                .foregroundColor(.slate500)
+    private func metricItem(label: String, value: String, color: Color, icon: String, subtext: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.system(size: 10, weight: .semibold))
+                Text(label)
+                    .font(.system(size: 9, weight: .bold))
+            }
+            .foregroundColor(color)
 
             Text(value)
-                .font(.system(size: 18, weight: .black, design: .monospaced))
-                .foregroundColor(color)
+                .font(.system(size: 20, weight: .bold))
+                .foregroundColor(.white)
 
             Text(subtext)
-                .font(.system(size: 8, design: .monospaced))
-                .foregroundColor(.slate400)
+                .font(.system(size: 9))
+                .foregroundColor(.white.opacity(0.5))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(8)
+        .background(Color.white.opacity(0.05))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
     // MARK: - Progress Section
 
     private var progressSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text(stageTitle)
-                    .font(.system(size: 11, weight: .bold, design: .monospaced))
-                    .foregroundColor(.slate200)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.white)
+                    .lineLimit(1)
 
                 Spacer()
 
                 Text("\(Int(progressFraction * 100))%")
-                    .font(.system(size: 12, weight: .black, design: .monospaced))
-                    .foregroundColor(.consoleCyan)
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundColor(.blue)
             }
 
-            // Custom Utilitarian Progress Bar
+            // Apple Progress Bar
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
-                    Rectangle()
-                        .fill(Color.slate800)
-                        .frame(height: 12)
+                    Capsule()
+                        .fill(Color.white.opacity(0.12))
+                        .frame(height: 8)
 
-                    Rectangle()
-                        .fill(Color.consoleCyan)
-                        .frame(width: geo.size.width * max(0.0, min(1.0, progressFraction)), height: 12)
+                    Capsule()
+                        .fill(Color.blue)
+                        .frame(width: max(8, geo.size.width * CGFloat(max(0.0, min(1.0, progressFraction)))), height: 8)
                 }
-                .utilitarianBorder(color: .slate700, width: 1, cornerRadius: 2)
             }
-            .frame(height: 12)
+            .frame(height: 8)
 
             HStack {
                 Text("RATE: \(transferSpeedText)")
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundColor(.slate400)
+                    .font(.system(size: 11))
+                    .foregroundColor(.white.opacity(0.5))
 
                 Spacer()
 
                 Text("VERIFIED: \(verifiedEntries.count) / \(itemsToUpload.count)")
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                    .foregroundColor(.slate300)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.8))
             }
         }
-        .padding(10)
-        .background(Color.slate900)
-        .utilitarianBorder(color: .slate800, width: 1, cornerRadius: 4)
+        .padding(14)
+        .background(Color(red: 0.11, green: 0.11, blue: 0.13))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
     private var stageTitle: String {
@@ -279,33 +289,33 @@ public struct BackupProgressView: View {
     // MARK: - Monospaced Console Log
 
     private var consoleLogCard: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("INTEGRITY & LEDGER TELEMETRY:")
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
-                    .foregroundColor(.slate400)
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(.white.opacity(0.6))
                 Spacer()
                 Text("\(logs.count) LOGS")
-                    .font(.system(size: 9, design: .monospaced))
-                    .foregroundColor(.slate500)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(.white.opacity(0.4))
             }
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: 4) {
                     if logs.isEmpty {
                         Text("Ready to start upload. Awaiting user execution.")
-                            .font(.system(size: 10, design: .monospaced))
-                            .foregroundColor(.slate600)
+                            .font(.system(size: 11))
+                            .foregroundColor(.white.opacity(0.4))
                             .padding(.vertical, 8)
                     } else {
                         ForEach(logs) { entry in
                             HStack(alignment: .top, spacing: 6) {
                                 Text("[\(entry.time)]")
-                                    .font(.system(size: 9, design: .monospaced))
-                                    .foregroundColor(.slate600)
+                                    .font(.system(size: 10, design: .monospaced))
+                                    .foregroundColor(.white.opacity(0.4))
 
                                 Text(entry.message)
-                                    .font(.system(size: 9, design: .monospaced))
+                                    .font(.system(size: 10, design: .monospaced))
                                     .foregroundColor(entry.color)
                                     .lineLimit(2)
                             }
@@ -314,49 +324,53 @@ public struct BackupProgressView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(height: 140)
-            .padding(6)
-            .background(Color.slate950)
-            .utilitarianBorder(color: .slate800, width: 1, cornerRadius: 2)
+            .frame(height: 130)
+            .padding(8)
+            .background(Color.black.opacity(0.4))
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
-        .padding(10)
-        .background(Color.slate900)
-        .utilitarianBorder(color: .slate800, width: 1, cornerRadius: 4)
+        .padding(14)
+        .background(Color(red: 0.11, green: 0.11, blue: 0.13))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
     // MARK: - Completion Summary Card
 
     private func completionSummaryCard(uploaded: Int, deleted: Int, kept: Int) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
                 Image(systemName: "checkmark.shield.fill")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundColor(.triageBackupKeep)
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundColor(.green)
 
                 Text("BACKUP PIPELINE VERIFIED & COMMITTED")
-                    .font(.system(size: 11, weight: .bold, design: .monospaced))
-                    .foregroundColor(.triageBackupKeep)
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundColor(.green)
             }
 
-            VStack(alignment: .leading, spacing: 4) {
-                summaryRow(title: "Backed Up & SHA-256 Verified:", value: "\(uploaded) assets", color: .consoleCyan)
-                summaryRow(title: "Purged from Camera Roll:", value: "\(deleted) assets", color: .triageTrash)
-                summaryRow(title: "Preserved on iPhone:", value: "\(kept) assets", color: .triageBackupKeep)
+            VStack(alignment: .leading, spacing: 6) {
+                summaryRow(title: "Backed Up & SHA-256 Verified:", value: "\(uploaded) assets", color: .blue)
+                summaryRow(title: "Purged from Camera Roll:", value: "\(deleted) assets", color: .red)
+                summaryRow(title: "Preserved on iPhone:", value: "\(kept) assets", color: .green)
             }
         }
-        .padding(10)
-        .background(Color.slate900)
-        .utilitarianBorder(color: .triageBackupKeep, width: 1, cornerRadius: 4)
+        .padding(14)
+        .background(Color(red: 0.11, green: 0.11, blue: 0.13))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color.green.opacity(0.3), lineWidth: 1)
+        )
     }
 
     private func summaryRow(title: String, value: String, color: Color) -> some View {
         HStack {
             Text(title)
-                .font(.system(size: 10, design: .monospaced))
-                .foregroundColor(.slate400)
+                .font(.system(size: 12))
+                .foregroundColor(.white.opacity(0.7))
             Spacer()
             Text(value)
-                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                .font(.system(size: 12, weight: .semibold))
                 .foregroundColor(color)
         }
     }
@@ -364,27 +378,31 @@ public struct BackupProgressView: View {
     // MARK: - Error Banner
 
     private func errorBanner(message: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundColor(.triageTrash)
+                    .foregroundColor(.red)
                 Text("SAFETY GUARD HALTED EXECUTION")
-                    .font(.system(size: 11, weight: .bold, design: .monospaced))
-                    .foregroundColor(.triageTrash)
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundColor(.red)
             }
 
             Text(message)
-                .font(.system(size: 10, design: .monospaced))
-                .foregroundColor(.slate200)
+                .font(.system(size: 12))
+                .foregroundColor(.white.opacity(0.9))
 
             Text("No photos were deleted. Your Camera Roll is completely intact. Resolve server issue and tap RETRY.")
-                .font(.system(size: 9, design: .monospaced))
-                .foregroundColor(.slate400)
+                .font(.system(size: 11))
+                .foregroundColor(.white.opacity(0.6))
                 .padding(.top, 2)
         }
-        .padding(10)
-        .background(Color.slate900)
-        .utilitarianBorder(color: .triageTrash, width: 1, cornerRadius: 4)
+        .padding(14)
+        .background(Color.red.opacity(0.12))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color.red.opacity(0.35), lineWidth: 1)
+        )
     }
 
     // MARK: - Bottom Action Bar
@@ -392,8 +410,8 @@ public struct BackupProgressView: View {
     private var bottomActionBar: some View {
         VStack(spacing: 8) {
             Rectangle()
-                .fill(Color.slate800)
-                .frame(height: 1)
+                .fill(Color.white.opacity(0.12))
+                .frame(height: 0.5)
 
             HStack(spacing: 8) {
                 if case .failed = stage {
@@ -403,32 +421,29 @@ public struct BackupProgressView: View {
                     } label: {
                         HStack(spacing: 6) {
                             Image(systemName: "arrow.clockwise")
-                                .font(.system(size: 14, weight: .bold))
+                                .font(.system(size: 14, weight: .semibold))
                             Text("RETRY BACKUP")
-                                .font(.system(size: 14, weight: .bold, design: .rounded))
+                                .font(.system(size: 15, weight: .semibold))
                         }
-                        .foregroundColor(.slate100)
+                        .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
-                        .frame(height: 52)
-                        .background(Color.slate800)
-                        .cornerRadius(12)
-                        .utilitarianBorder(color: .consoleCyan, width: 1, cornerRadius: 12)
+                        .frame(height: 50)
+                        .background(Color.red)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     }
                 } else if case .completed = stage {
                     Button {
                         triggerHapticFeedback(0)
-                        // Reset batch and return
                         triageState.reset()
                         stage = .idle
                     } label: {
                         Text("SELECT ANOTHER MONTH")
-                            .font(.system(size: 14, weight: .bold, design: .rounded))
-                            .foregroundColor(.consoleCyan)
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
-                            .frame(height: 52)
-                            .background(Color.slate800)
-                            .cornerRadius(12)
-                            .utilitarianBorder(color: .consoleCyan, width: 1, cornerRadius: 12)
+                            .frame(height: 50)
+                            .background(Color.blue)
+                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     }
                 } else {
                     Button {
@@ -439,28 +454,27 @@ public struct BackupProgressView: View {
                             if isExecuting {
                                 ProgressView()
                                     .scaleEffect(0.9)
-                                    .tint(.slate950)
+                                    .tint(.white)
                             } else {
                                 Image(systemName: "externaldrive.badge.icloud")
-                                    .font(.system(size: 16, weight: .bold))
+                                    .font(.system(size: 16, weight: .semibold))
                             }
                             Text(isExecuting ? "EXECUTING BACKUP..." : "EXECUTE BACKUP & PURGE")
-                                .font(.system(size: 14, weight: .bold, design: .rounded))
+                                .font(.system(size: 15, weight: .semibold))
                         }
-                        .foregroundColor(isExecuting ? .slate400 : .slate950)
+                        .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
-                        .frame(height: 52)
-                        .background(isExecuting ? Color.slate800 : Color.consoleCyan)
-                        .cornerRadius(12)
-                        .utilitarianBorder(color: isExecuting ? .slate700 : .consoleCyan, width: 1, cornerRadius: 12)
+                        .frame(height: 50)
+                        .background(isExecuting ? Color.white.opacity(0.2) : ((itemsToUpload.isEmpty && itemsToDelete.isEmpty) ? Color.blue.opacity(0.4) : Color.blue))
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     }
                     .disabled(isExecuting || (itemsToUpload.isEmpty && itemsToDelete.isEmpty))
                 }
             }
-            .padding(.horizontal, 14)
-            .padding(.bottom, 8)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 10)
         }
-        .background(Color.slate950)
+        .background(Color(red: 0.08, green: 0.08, blue: 0.09).opacity(0.95))
     }
 
     // MARK: - Pipeline Execution
