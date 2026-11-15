@@ -1,9 +1,35 @@
 import * as fs from 'fs/promises';
 import * as nodeFs from 'fs';
 import * as path from 'path';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import type { AssetBundle, AssetFile, BackupResult, LedgerEntry } from '../types/index.js';
 import { computeFileHash, loadLedger, saveLedger } from './ledger.js';
 import { resolveTargetSubdir, DEFAULT_FOLDER_FORMAT } from './config.js';
+
+const execFileAsync = promisify(execFile);
+
+/**
+ * Preserves the file creation date (birthtime) and modification date (mtime)
+ * to match original photo capturedAt metadata.
+ * Uses POSIX fs.utimes and macOS /usr/bin/SetFile for 100% Finder compatibility across APFS/HFS+/exFAT.
+ */
+export async function applyFileTimestamps(filePath: string, date: Date | string): Promise<void> {
+  const d = typeof date === 'string' ? new Date(date) : date;
+  if (!d || isNaN(d.getTime())) return;
+
+  try {
+    await fs.utimes(filePath, d, d);
+  } catch {}
+
+  if (process.platform === 'darwin') {
+    try {
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const formatted = `${pad(d.getMonth() + 1)}/${pad(d.getDate())}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+      await execFileAsync('/usr/bin/SetFile', ['-d', formatted, '-m', formatted, filePath]);
+    } catch {}
+  }
+}
 
 /**
  * Finds the primary asset file in a bundle using standard precedence:
@@ -356,13 +382,11 @@ export async function executeBackup(
           copiedCount++;
 
           if (targetDate && !isNaN(targetDate.getTime())) {
-            try {
-              await fs.utimes(pf.destPath, targetDate, targetDate);
-            } catch {}
+            await applyFileTimestamps(pf.destPath, targetDate);
           } else {
             try {
               const srcStat = await fs.stat(pf.srcPath);
-              await fs.utimes(pf.destPath, srcStat.mtime, srcStat.mtime);
+              await applyFileTimestamps(pf.destPath, srcStat.mtime);
             } catch {}
           }
         }

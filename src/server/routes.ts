@@ -27,7 +27,7 @@ import {
   LEDGER_BACKUP_DIR,
   LEDGER_BACKUP_FILENAME,
 } from './ledger.js';
-import { executeBackup, applySuffix, isPathInsideRoot } from './backup.js';
+import { executeBackup, applySuffix, isPathInsideRoot, applyFileTimestamps } from './backup.js';
 import { loadConfig, saveConfig, pickFolderWithFinder, FOLDER_FORMAT_PRESETS, expandHome } from './config.js';
 
 export const ALLOWED_UPLOAD_ROLES = new Set(['primary', 'live_video', 'edit_sidecar', 'edited_render']);
@@ -1157,9 +1157,7 @@ export const routes: FastifyPluginAsync<RoutesOptions> = async (
         const fileDate = new Date(capturedAt);
         if (!isNaN(fileDate.getTime())) {
           for (const rf of resolvedFiles) {
-            try {
-              await fsp.utimes(rf.destPath, fileDate, fileDate);
-            } catch {}
+            await applyFileTimestamps(rf.destPath, fileDate);
           }
         }
       }
