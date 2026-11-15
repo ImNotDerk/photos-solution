@@ -204,7 +204,7 @@ describe('iOS Utilitarian SwiftUI Views Contract Tests (Task 4)', () => {
     });
 
     it('defines DailyAssetSection model and groupedDailySections helper for calendar day grouping', () => {
-      expect(code).toContain('struct DailyAssetSection: Identifiable, Sendable');
+      expect(code).toContain('struct DailyAssetSection: Identifiable, Sendable, Equatable');
       expect(code).toContain('public let title: String');
       expect(code).toContain('public let assets: [TriageAsset]');
       expect(code).toContain('func groupedDailySections(for assets: [TriageAsset]) -> [DailyAssetSection]');

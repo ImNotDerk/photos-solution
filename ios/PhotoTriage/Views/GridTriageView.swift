@@ -7,7 +7,7 @@ import AppKit
 #endif
 
 /// Represents a calendar day grouping of triage assets.
-public struct DailyAssetSection: Identifiable, Sendable {
+public struct DailyAssetSection: Identifiable, Sendable, Equatable {
     public let id: String
     public let date: Date
     public let title: String
@@ -56,16 +56,19 @@ public struct GridTriageView: View {
         guard !assets.isEmpty else { return [] }
 
         let calendar = Calendar.current
+        let fallbackDate = Date()
         var dict: [Date: [TriageAsset]] = [:]
+        var orderedDays: [Date] = []
 
         for asset in assets {
-            let dayDate = calendar.startOfDay(for: asset.creationDate ?? Date())
+            let dayDate = calendar.startOfDay(for: asset.creationDate ?? fallbackDate)
+            if dict[dayDate] == nil {
+                orderedDays.append(dayDate)
+            }
             dict[dayDate, default: []].append(asset)
         }
 
-        let sortedDays = dict.keys.sorted(by: >)
-
-        return sortedDays.compactMap { dayDate in
+        return orderedDays.compactMap { dayDate in
             guard let dayAssets = dict[dayDate], !dayAssets.isEmpty else { return nil }
             let id = String(Int(dayDate.timeIntervalSince1970))
             let title = Self.dayHeaderFormatter.string(from: dayDate)
@@ -478,7 +481,7 @@ public struct DaySectionHeader: View {
 
             Spacer()
 
-            Text("\(count) \(count == 1 ? "PHOTO" : "PHOTOS")")
+            Text("\(count) \(count == 1 ? "ITEM" : "ITEMS")")
                 .font(.system(size: 10, weight: .bold, design: .monospaced))
                 .foregroundColor(.slate400)
                 .padding(.horizontal, 6)
@@ -487,10 +490,10 @@ public struct DaySectionHeader: View {
                 .cornerRadius(4)
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 7)
-        .background(Color.slate950.opacity(0.92))
+        .padding(.top, 8)
+        .padding(.bottom, 6)
+        .background(Color.slate950.opacity(0.96))
         .utilitarianBorder(color: Color.slate800, width: 1, cornerRadius: 4)
-        .padding(.top, 4)
         .padding(.bottom, 2)
     }
 }
