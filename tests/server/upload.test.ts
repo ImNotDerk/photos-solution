@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fsp from 'fs/promises';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -369,5 +369,138 @@ describe('POST /api/upload - Mac Server Streaming Upload Endpoint', () => {
     expect(res.statusCode).toBe(400);
     const body = res.json();
     expect(body.error).toMatch(/decision/i);
+    expect(Array.isArray(body.errors)).toBe(true);
+    expect(body.errors[0]).toBe(body.error);
+  });
+
+  it('rejects path traversal attempts in targetYear and targetMonth (CWE-22)', async () => {
+    // 1. Path traversal in targetYear
+    const { payload: payloadYear, contentType: ctYear } = buildMultipartPayload(
+      {
+        bundleId: 'IMG_7001',
+        canonicalName: 'IMG_7001',
+        targetYear: '../../etc',
+        targetMonth: 'JANUARY',
+        decision: 'backup_only',
+      },
+      [{ fieldname: 'primary', filename: 'IMG_7001.HEIC', content: 'Traversal test' }]
+    );
+
+    const resYear = await app.inject({
+      method: 'POST',
+      url: '/api/upload',
+      headers: { 'content-type': ctYear },
+      payload: payloadYear,
+    });
+
+    expect(resYear.statusCode).toBe(400);
+    const bodyYear = resYear.json();
+    expect(bodyYear.error).toMatch(/targetYear/i);
+    expect(bodyYear.errors).toBeDefined();
+
+    // 2. Path traversal in targetMonth
+    const { payload: payloadMonth, contentType: ctMonth } = buildMultipartPayload(
+      {
+        bundleId: 'IMG_7002',
+        canonicalName: 'IMG_7002',
+        targetYear: '2024',
+        targetMonth: '../../etc',
+        decision: 'backup_only',
+      },
+      [{ fieldname: 'primary', filename: 'IMG_7002.HEIC', content: 'Traversal test' }]
+    );
+
+    const resMonth = await app.inject({
+      method: 'POST',
+      url: '/api/upload',
+      headers: { 'content-type': ctMonth },
+      payload: payloadMonth,
+    });
+
+    expect(resMonth.statusCode).toBe(400);
+    const bodyMonth = resMonth.json();
+    expect(bodyMonth.error).toMatch(/targetMonth/i);
+    expect(bodyMonth.errors).toBeDefined();
+  });
+
+  it('rejects upload with 400 when duplicate filenames exist within the same upload bundle', async () => {
+    const { payload, contentType } = buildMultipartPayload(
+      {
+        bundleId: 'IMG_8001',
+        canonicalName: 'IMG_8001',
+        targetYear: '2024',
+        targetMonth: 'NOVEMBER',
+        decision: 'backup_only',
+      },
+      [
+        { fieldname: 'primary', filename: 'IMG_8001.HEIC', content: 'Photo 1' },
+        { fieldname: 'live_video', filename: 'IMG_8001.HEIC', content: 'Duplicate filename photo' },
+      ]
+    );
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/upload',
+      headers: { 'content-type': contentType },
+      payload,
+    });
+
+    expect(res.statusCode).toBe(400);
+    const body = res.json();
+    expect(body.error).toMatch(/duplicate filename/i);
+    expect(body.errors).toBeDefined();
+  });
+
+  it('cleans up destination files from hard drive if verification fails', async () => {
+    const photoContent = 'Photo that will fail verification';
+    const destPhotoPath = path.join(hardDriveRoot, '2024', 'DECEMBER', 'IMG_9001.HEIC');
+
+    // Create a dedicated server with onBeforeVerification hook that corrupts the file mid-flight
+    const corruptApp = await createServer({
+      stagingDir,
+      hardDriveRoot,
+      sessionManager,
+      onBeforeVerification: async (movedPaths) => {
+        for (const p of movedPaths) {
+          // Corrupt destination file on disk before verification runs
+          await fsp.writeFile(p, 'CORRUPTED_BYTES_DIFFERING_FROM_UPLOAD');
+        }
+      },
+    });
+
+    try {
+      const { payload, contentType } = buildMultipartPayload(
+        {
+          bundleId: 'IMG_9001',
+          canonicalName: 'IMG_9001',
+          targetYear: '2024',
+          targetMonth: 'DECEMBER',
+          decision: 'backup_only',
+        },
+        [{ fieldname: 'primary', filename: 'IMG_9001.HEIC', content: photoContent }]
+      );
+
+      const res = await corruptApp.inject({
+        method: 'POST',
+        url: '/api/upload',
+        headers: { 'content-type': contentType },
+        payload,
+      });
+
+      expect(res.statusCode).toBe(500);
+      const body = res.json();
+      expect(body.success).toBe(false);
+      expect(body.error).toMatch(/mismatch/i);
+      expect(body.errors).toBeDefined();
+
+      // Verify destination file was cleaned up and NOT left on the hard drive
+      expect(fs.existsSync(destPhotoPath)).toBe(false);
+
+      // Verify ledger was NOT updated
+      const ledger = await loadLedger(hardDriveRoot);
+      expect(ledger.size).toBe(0);
+    } finally {
+      await corruptApp.close();
+    }
   });
 });

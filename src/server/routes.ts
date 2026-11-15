@@ -160,6 +160,7 @@ export const defaultSessionManager = new SessionManager();
 
 export interface RoutesOptions {
   sessionManager?: SessionManager;
+  onBeforeVerification?: (destPaths: string[]) => Promise<void>;
 }
 
 export const routes: FastifyPluginAsync<RoutesOptions> = async (
@@ -542,6 +543,7 @@ export const routes: FastifyPluginAsync<RoutesOptions> = async (
       return reply.status(400).send({
         success: false,
         error: `Hard drive root "${hardDriveRoot}" is not mounted or accessible.`,
+        errors: [`Hard drive root "${hardDriveRoot}" is not mounted or accessible.`],
       });
     }
 
@@ -562,11 +564,22 @@ export const routes: FastifyPluginAsync<RoutesOptions> = async (
 
     const fields: Record<string, string> = {};
     const uploadedFiles: UploadedFile[] = [];
+    const newlyMovedPaths: string[] = [];
 
     const cleanupTmpFiles = async () => {
       for (const f of uploadedFiles) {
         try {
           await fsp.unlink(f.tmpPath);
+        } catch {
+          // ignore
+        }
+      }
+    };
+
+    const cleanupMovedFiles = async () => {
+      for (const p of newlyMovedPaths) {
+        try {
+          await fsp.unlink(p);
         } catch {
           // ignore
         }
@@ -614,6 +627,7 @@ export const routes: FastifyPluginAsync<RoutesOptions> = async (
             return reply.status(413).send({
               success: false,
               error: `File "${safeFilename}" exceeded 200MB limit.`,
+              errors: [`File "${safeFilename}" exceeded 200MB limit.`],
             });
           }
 
@@ -630,9 +644,11 @@ export const routes: FastifyPluginAsync<RoutesOptions> = async (
       }
     } catch (err: any) {
       await cleanupTmpFiles();
+      const msg = `Failed to process multipart upload: ${err.message}`;
       return reply.status(400).send({
         success: false,
-        error: `Failed to process multipart upload: ${err.message}`,
+        error: msg,
+        errors: [msg],
       });
     }
 
@@ -642,9 +658,11 @@ export const routes: FastifyPluginAsync<RoutesOptions> = async (
       }
       if (!hardDriveRoot || !(await isHardDriveMounted(hardDriveRoot))) {
         await cleanupTmpFiles();
+        const msg = `Hard drive root "${hardDriveRoot || ''}" is missing, unwritable, or not mounted.`;
         return reply.status(400).send({
           success: false,
-          error: `Hard drive root "${hardDriveRoot || ''}" is missing, unwritable, or not mounted.`,
+          error: msg,
+          errors: [msg],
         });
       }
 
@@ -658,45 +676,116 @@ export const routes: FastifyPluginAsync<RoutesOptions> = async (
         await fsp.unlink(probeFile);
       } catch (err: any) {
         await cleanupTmpFiles();
+        const msg = `Hard drive root "${hardDriveRoot}" is unwritable: ${err.message}`;
         return reply.status(500).send({
           success: false,
-          error: `Hard drive root "${hardDriveRoot}" is unwritable: ${err.message}`,
+          verifiedCount: 0,
+          error: msg,
+          errors: [msg],
         });
       }
 
       const bundleId = fields.bundleId;
       if (!bundleId) {
         await cleanupTmpFiles();
+        const msg = 'Missing required form field "bundleId".';
         return reply.status(400).send({
           success: false,
-          error: 'Missing required form field "bundleId".',
+          error: msg,
+          errors: [msg],
         });
       }
 
       const decision = fields.decision;
       if (!decision || (decision !== 'backup_only' && decision !== 'backup_keep')) {
         await cleanupTmpFiles();
+        const msg = `Invalid or missing triage decision "${decision}". Must be "backup_only" or "backup_keep".`;
         return reply.status(400).send({
           success: false,
-          error: `Invalid or missing triage decision "${decision}". Must be "backup_only" or "backup_keep".`,
+          error: msg,
+          errors: [msg],
         });
       }
 
       const primaryFile = uploadedFiles.find((f) => f.fieldname === 'primary');
       if (!primaryFile) {
         await cleanupTmpFiles();
+        const msg = 'Missing required file part "primary".';
         return reply.status(400).send({
           success: false,
-          error: 'Missing required file part "primary".',
+          error: msg,
+          errors: [msg],
         });
       }
 
-      const canonicalName = fields.canonicalName || bundleId;
-      const targetYear = fields.targetYear ? fields.targetYear.trim() : String(new Date().getFullYear());
-      const targetMonth = fields.targetMonth ? fields.targetMonth.trim().toUpperCase() : 'UNKNOWN';
-      const capturedAt = fields.capturedAt || new Date().toISOString();
+      // Guard against intra-bundle duplicate filenames
+      const seenFilenames = new Set<string>();
+      for (const file of uploadedFiles) {
+        if (seenFilenames.has(file.filename)) {
+          await cleanupTmpFiles();
+          const msg = `Duplicate filename "${file.filename}" in upload bundle. All companion files must have distinct filenames.`;
+          return reply.status(400).send({
+            success: false,
+            error: msg,
+            errors: [msg],
+          });
+        }
+        seenFilenames.add(file.filename);
+      }
 
-      const destDir = path.join(hardDriveRoot, targetYear, targetMonth);
+      const canonicalName = fields.canonicalName || bundleId;
+
+      // Sanitize and validate targetYear and targetMonth against path traversal (CWE-22)
+      if (
+        fields.targetYear &&
+        (fields.targetYear.includes('/') ||
+          fields.targetYear.includes('\\') ||
+          fields.targetYear.includes('..') ||
+          !/^\d{4}$/.test(fields.targetYear.trim()))
+      ) {
+        await cleanupTmpFiles();
+        const msg = `Invalid targetYear "${fields.targetYear}". Must be a 4-digit year (e.g. 2024).`;
+        return reply.status(400).send({
+          success: false,
+          error: msg,
+          errors: [msg],
+        });
+      }
+      const rawYear = fields.targetYear ? fields.targetYear.trim() : String(new Date().getFullYear());
+      const targetYear = path.basename(rawYear);
+
+      if (
+        fields.targetMonth &&
+        (fields.targetMonth.includes('/') ||
+          fields.targetMonth.includes('\\') ||
+          fields.targetMonth.includes('..') ||
+          !/^[A-Z0-9_-]+$/i.test(fields.targetMonth.trim()))
+      ) {
+        await cleanupTmpFiles();
+        const msg = `Invalid targetMonth "${fields.targetMonth}". Must be alphanumeric (e.g. JANUARY).`;
+        return reply.status(400).send({
+          success: false,
+          error: msg,
+          errors: [msg],
+        });
+      }
+      const rawMonth = fields.targetMonth ? fields.targetMonth.trim().toUpperCase() : 'UNKNOWN';
+      const targetMonth = path.basename(rawMonth);
+
+      const destDir = path.resolve(hardDriveRoot, targetYear, targetMonth);
+      const resolvedRoot = path.resolve(hardDriveRoot);
+      const rootPrefix = resolvedRoot.endsWith(path.sep) ? resolvedRoot : resolvedRoot + path.sep;
+      if (!destDir.startsWith(rootPrefix)) {
+        await cleanupTmpFiles();
+        const msg = 'Path traversal detected in destination path.';
+        return reply.status(400).send({
+          success: false,
+          error: msg,
+          errors: [msg],
+        });
+      }
+
+      const capturedAt = fields.capturedAt || new Date().toISOString();
       await fsp.mkdir(destDir, { recursive: true });
 
       // Collision Resolution
@@ -778,15 +867,22 @@ export const routes: FastifyPluginAsync<RoutesOptions> = async (
         } else {
           try {
             await fsp.rename(rf.tmpPath, rf.destPath);
+            newlyMovedPaths.push(rf.destPath);
           } catch (renameErr: any) {
             if (renameErr.code === 'EXDEV') {
               await fsp.copyFile(rf.tmpPath, rf.destPath);
               await fsp.unlink(rf.tmpPath);
+              newlyMovedPaths.push(rf.destPath);
             } else {
               throw renameErr;
             }
           }
         }
+      }
+
+      // Optional hook before verification (e.g. for testing corruption & cleanup recovery)
+      if (options?.onBeforeVerification) {
+        await options.onBeforeVerification(newlyMovedPaths);
       }
 
       // Verification Phase on Hard Drive
@@ -846,10 +942,13 @@ export const routes: FastifyPluginAsync<RoutesOptions> = async (
       });
     } catch (err: any) {
       await cleanupTmpFiles();
+      await cleanupMovedFiles();
+      const msg = err.message || String(err);
       return reply.status(500).send({
         success: false,
         verifiedCount: 0,
-        errors: [err.message || String(err)],
+        error: msg,
+        errors: [msg],
       });
     }
   });

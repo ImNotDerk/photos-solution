@@ -15,6 +15,7 @@ export interface ServerOptions {
   sessionManager?: SessionManager;
   clientDistDir?: string;
   port?: number;
+  onBeforeVerification?: (destPaths: string[]) => Promise<void>;
 }
 
 /**
@@ -216,7 +217,10 @@ export async function createServer(options?: ServerOptions): Promise<FastifyInst
   }
 
   // 3. Register domain REST API routes
-  await app.register(routes, { sessionManager });
+  await app.register(routes, {
+    sessionManager,
+    onBeforeVerification: options?.onBeforeVerification,
+  });
 
   // 4. Custom fallback handler to serve previewPath directly and support SPA routing
   app.setNotFoundHandler(async (request, reply) => {
