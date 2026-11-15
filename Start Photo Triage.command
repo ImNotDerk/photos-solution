@@ -68,6 +68,11 @@ fi
     echo ""
     echo "[Ready] Server is online. Opening dashboard in browser..."
     open "http://localhost:3000"
+    
+    # Launch Menu Bar companion app if built
+    if [ -d "dist/macos/PhotoTriageMenuBar.app" ]; then
+      open "dist/macos/PhotoTriageMenuBar.app" 2>/dev/null || true
+    fi
   fi
 ) &
 
