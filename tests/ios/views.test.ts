@@ -145,16 +145,19 @@ describe('iOS Utilitarian SwiftUI Views Contract Tests (Task 4)', () => {
     });
 
     it('implements continuous carousel track with Instagram-style spring popups and gestures', () => {
-      expect(code).toContain('carouselSlide');
-      expect(code).toContain('carouselOffset');
+      expect(code).toContain('carouselTrack');
       expect(code).toContain('popDecision');
       expect(code).toContain('instagramPopOverlay');
-      // Double tap Keep
+      // Double tap Keep with zoom reset guard
       expect(code).toContain('onTapGesture(count: 2)');
+      expect(code).toContain('zoomScale > 1.05');
       expect(code).toContain('applyTriageDecision(.backupKeep)');
       // Vertical gestures (Down = Trash, Up = HD Only)
       expect(code).toContain('applyTriageDecision(.trash)');
       expect(code).toContain('applyTriageDecision(.backupOnly)');
+      // Smooth animated auto-advance
+      expect(code).toContain('withAnimation(.easeOut');
+      expect(code).toContain('AssetSlideView');
     });
 
     it('contains FilmstripScrubberView and standard bottom action toolbar', () => {

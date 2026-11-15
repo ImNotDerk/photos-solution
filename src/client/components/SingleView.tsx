@@ -84,7 +84,7 @@ export const SingleView: React.FC<SingleViewProps> = ({
     };
   }, []);
 
-  // Handle triage action with Instagram spring pop animation and auto-advance
+  // Handle triage action with Instagram spring pop animation and 350ms settle auto-advance
   const handleTriageAction = (decision: TriageDecision) => {
     if (!bundle) return;
     setFeedbackStatus(decision);
@@ -99,7 +99,7 @@ export const SingleView: React.FC<SingleViewProps> = ({
       autoAdvanceTimerRef.current = setTimeout(() => {
         setPopDecision(null);
         onNext();
-      }, 250);
+      }, 350);
     }
   };
 
@@ -180,8 +180,22 @@ export const SingleView: React.FC<SingleViewProps> = ({
     );
   }
 
-  // Items in continuous carousel
-  const itemsToRender: AssetBundle[] = bundles && bundles.length > 0 ? bundles : [bundle];
+  // Virtualized Windowed Carousel:
+  // Render ONLY 3 items in the DOM [Slot -1 (prev), Slot 0 (current), Slot 1 (next)] to prevent DOM node bloat
+  const prevBundle = (currentIndex > 0 && bundles && bundles[currentIndex - 1]) ? bundles[currentIndex - 1] : null;
+  const nextBundle = (bundles && currentIndex < totalCount - 1 && bundles[currentIndex + 1]) ? bundles[currentIndex + 1] : null;
+
+  interface CarouselSlideItem {
+    slot: -1 | 0 | 1;
+    index: number;
+    bundle: AssetBundle | null;
+  }
+
+  const slides: CarouselSlideItem[] = [
+    { slot: -1, index: currentIndex - 1, bundle: prevBundle },
+    { slot: 0, index: currentIndex, bundle },
+    { slot: 1, index: currentIndex + 1, bundle: nextBundle },
+  ];
 
   // Option A Touch Handlers:
   // - Horizontal drag with 1:1 finger tracking, rubber-banding, snapping
@@ -246,6 +260,7 @@ export const SingleView: React.FC<SingleViewProps> = ({
     // Check double tap (two taps within 300ms with minimal travel)
     if (Math.abs(deltaX) < 15 && Math.abs(deltaY) < 15) {
       if (now - lastTapTimeRef.current < 300) {
+        lastTapTimeRef.current = 0;
         handleTriageAction('backup_keep');
         setDragX(0);
         return;
@@ -458,7 +473,7 @@ export const SingleView: React.FC<SingleViewProps> = ({
             className="absolute inset-0 flex items-center justify-center pointer-events-none z-30"
           >
             <div
-              style={{ animation: 'igPop 0.45s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards' }}
+              style={{ animation: 'igPop 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards' }}
               className={`flex flex-col items-center justify-center w-28 h-28 rounded-full shadow-2xl backdrop-blur-md border ${
                 popDecision === 'backup_keep'
                   ? 'bg-emerald-600/90 border-emerald-400 text-white shadow-emerald-900/50'
@@ -515,69 +530,81 @@ export const SingleView: React.FC<SingleViewProps> = ({
           </div>
         )}
 
-        {/* Continuous Sliding Carousel Track */}
+        {/* Continuous Sliding Carousel Track (3-Slot Balanced Window) */}
         <div
           data-testid="carousel-track"
           className="flex w-full h-full items-center"
           style={{
-            transform: `translateX(calc(-${currentIndex * 100}% + ${dragX}px))`,
+            transform: `translateX(calc(-100% + ${dragX}px))`,
             transition: isDragging ? 'none' : 'transform 280ms cubic-bezier(0.2, 0.9, 0.3, 1.0)',
           }}
         >
-          {itemsToRender.map((item, idx) => (
-            <div
-              key={item.id}
-              data-testid={`carousel-slide-${idx}`}
-              className="relative flex-shrink-0 w-full h-full flex items-center justify-center overflow-hidden"
-              style={{ width: '100%' }}
-            >
-              {/* Companion Badges (top-left of active photo) */}
-              {idx === currentIndex && (
-                <div className="absolute top-3 left-3 flex flex-wrap gap-1.5 z-10 font-mono text-[10px] pointer-events-none">
-                  {item.files.some((f) => f.role === 'live_video') && (
-                    <span className="px-2 py-0.5 rounded bg-emerald-950/80 border border-emerald-600/70 text-emerald-300 font-bold tracking-wider">
-                      LIVE
-                    </span>
-                  )}
-                  {item.files.some((f) => f.role === 'edited_render' || f.role === 'edit_sidecar') && (
-                    <span className="px-2 py-0.5 rounded bg-amber-950/80 border border-amber-600/70 text-amber-300 font-bold tracking-wider">
-                      EDIT
-                    </span>
-                  )}
-                  {item.files.some((f) => f.role === 'primary' && ['.mov', '.mp4', '.m4v'].includes(f.ext.toLowerCase())) && (
-                    <span className="px-2 py-0.5 rounded bg-cyan-950/80 border border-cyan-600/70 text-cyan-300 font-bold tracking-wider">
-                      VIDEO
-                    </span>
-                  )}
-                  {!item.dateReliable && (
-                    <span className="px-2 py-0.5 rounded bg-yellow-950/80 border border-yellow-600/70 text-yellow-300 font-bold tracking-wider">
-                      NO EXIF
-                    </span>
-                  )}
-                </div>
-              )}
+          {slides.map((slide) => {
+            const item = slide.bundle;
+            const isCenter = slide.slot === 0;
 
-              {/* Media Preview */}
-              {item.files.some((f) => f.role === 'primary' && ['.mov', '.mp4', '.m4v'].includes(f.ext.toLowerCase())) &&
-              ['.mov', '.mp4', '.m4v'].some((ext) => item.previewPath.toLowerCase().endsWith(ext)) ? (
-                <video
-                  src={item.previewPath}
-                  controls={idx === currentIndex}
-                  playsInline
-                  className="max-h-[58vh] max-w-full object-contain pointer-events-none"
-                />
-              ) : (
-                <img
-                  src={item.previewPath}
-                  alt={item.canonicalName}
-                  className="max-h-[58vh] max-w-full object-contain pointer-events-none"
-                  onError={(e) => {
-                    (e.currentTarget as HTMLElement).style.display = 'none';
-                  }}
-                />
-              )}
-            </div>
-          ))}
+            return (
+              <div
+                key={slide.index >= 0 ? `slide-${slide.index}` : `empty-slot-${slide.slot}`}
+                data-testid={slide.index >= 0 ? `carousel-slide-${slide.index}` : undefined}
+                className="relative flex-shrink-0 w-full h-full flex items-center justify-center overflow-hidden px-2"
+                style={{ width: '100%' }}
+              >
+                {item ? (
+                  <>
+                    {/* Companion Badges (top-left of active photo) */}
+                    {isCenter && (
+                      <div className="absolute top-3 left-3 flex flex-wrap gap-1.5 z-10 font-mono text-[10px] pointer-events-none">
+                        {item.files.some((f) => f.role === 'live_video') && (
+                          <span className="px-2 py-0.5 rounded bg-emerald-950/80 border border-emerald-600/70 text-emerald-300 font-bold tracking-wider">
+                            LIVE
+                          </span>
+                        )}
+                        {item.files.some((f) => f.role === 'edited_render' || f.role === 'edit_sidecar') && (
+                          <span className="px-2 py-0.5 rounded bg-amber-950/80 border border-amber-600/70 text-amber-300 font-bold tracking-wider">
+                            EDIT
+                          </span>
+                        )}
+                        {item.files.some((f) => f.role === 'primary' && ['.mov', '.mp4', '.m4v'].includes(f.ext.toLowerCase())) && (
+                          <span className="px-2 py-0.5 rounded bg-cyan-950/80 border border-cyan-600/70 text-cyan-300 font-bold tracking-wider">
+                            VIDEO
+                          </span>
+                        )}
+                        {!item.dateReliable && (
+                          <span className="px-2 py-0.5 rounded bg-yellow-950/80 border border-yellow-600/70 text-yellow-300 font-bold tracking-wider">
+                            NO EXIF
+                          </span>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Media Preview: video controls enabled on active slide */}
+                    {item.files.some((f) => f.role === 'primary' && ['.mov', '.mp4', '.m4v'].includes(f.ext.toLowerCase())) &&
+                    ['.mov', '.mp4', '.m4v'].some((ext) => item.previewPath.toLowerCase().endsWith(ext)) ? (
+                      <video
+                        src={item.previewPath}
+                        controls={isCenter}
+                        playsInline
+                        className={`max-h-[58vh] max-w-full object-contain ${isCenter ? 'pointer-events-auto' : 'pointer-events-none'}`}
+                        onDragStart={(e) => e.preventDefault()}
+                      />
+                    ) : (
+                      <img
+                        src={item.previewPath}
+                        alt={item.canonicalName}
+                        className="max-h-[58vh] max-w-full object-contain pointer-events-none"
+                        onError={(e) => {
+                          (e.currentTarget as HTMLElement).style.display = 'none';
+                        }}
+                      />
+                    )}
+                  </>
+                ) : (
+                  <div className="w-full h-full" />
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
 

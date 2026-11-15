@@ -16,12 +16,6 @@ public struct SingleTriageView: View {
 
     public var onDismissToGrid: (() -> Void)? = nil
 
-    // Image loading state (current + adjacent slides for smooth 60fps peeking)
-    @State private var currentImage: UIImage? = nil
-    @State private var prevImage: UIImage? = nil
-    @State private var nextImage: UIImage? = nil
-    @State private var isLoadingImage = false
-
     // Zoom, Carousel Drag, and Cancellable Auto-Advance
     @State private var zoomScale: CGFloat = 1.0
     @State private var dragOffset: CGSize = .zero
@@ -50,13 +44,13 @@ public struct SingleTriageView: View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            if let asset = currentAsset {
+            if let _ = currentAsset {
                 VStack(spacing: 0) {
                     // 1. Standard Top Navigation Bar
                     nativeTopBar
 
                     // 2. Full-Bleed Photo Paging Carousel Viewport
-                    photoCanvas(for: asset)
+                    carouselTrack
 
                     // 3. Filmstrip Scrubber & Bottom Toolbar
                     nativeBottomToolbar
@@ -64,9 +58,6 @@ public struct SingleTriageView: View {
             } else {
                 emptyStateView
             }
-        }
-        .task(id: currentAsset?.id) {
-            await reloadImage()
         }
         .sheet(isPresented: $showDetailsSheet) {
             if let asset = currentAsset {
@@ -182,10 +173,10 @@ public struct SingleTriageView: View {
 
     private var decisionBadgeText: String {
         switch currentDecision {
-        case .trash: return "Trash"
-        case .backupOnly: return "HD Only"
-        case .backupKeep: return "Keep"
-        case .unsorted: return "Unsorted"
+        case .trash: return "TRASH"
+        case .backupOnly: return "HD ONLY"
+        case .backupKeep: return "KEEP"
+        case .unsorted: return "UNSORTED"
         }
     }
 
@@ -194,15 +185,15 @@ public struct SingleTriageView: View {
         case .trash: return Color.red.opacity(0.9)
         case .backupOnly: return Color.blue.opacity(0.9)
         case .backupKeep: return Color.green.opacity(0.9)
-        case .unsorted: return Color.white.opacity(0.5)
+        case .unsorted: return Color.white.opacity(0.6)
         }
     }
 
     private var decisionBackgroundColor: Color {
         switch currentDecision {
-        case .trash: return Color.red.opacity(0.18)
-        case .backupOnly: return Color.blue.opacity(0.18)
-        case .backupKeep: return Color.green.opacity(0.18)
+        case .trash: return Color.red.opacity(0.15)
+        case .backupOnly: return Color.blue.opacity(0.15)
+        case .backupKeep: return Color.green.opacity(0.15)
         case .unsorted: return Color.white.opacity(0.08)
         }
     }
@@ -218,37 +209,60 @@ public struct SingleTriageView: View {
 
     // MARK: - Photo Canvas with Carousel & Instagram Spring Popups
 
-    private func photoCanvas(for asset: TriageAsset) -> some View {
+    private var carouselTrack: some View {
         GeometryReader { geometry in
             let width = geometry.size.width
             let height = geometry.size.height
+            let slideSize = CGSize(width: width, height: height)
 
             ZStack {
                 Color.black
 
-                // Interactive Continuous Paging Carousel Track
+                // 3-Panel Balanced Carousel Track: [Slot 0 (prev), Slot 1 (current), Slot 2 (next)]
+                // Because Slot 1 is ALWAYS the exact center child of the 3-panel HStack,
+                // it is naturally centered in the viewport with baseOffset = 0!
                 HStack(spacing: 16) {
+                    // Slot 0: Previous asset or empty placeholder
                     if triageState.currentIndex > 0 {
-                        carouselSlide(image: prevImage, size: CGSize(width: width, height: height))
+                        AssetSlideView(
+                            asset: triageState.assets[triageState.currentIndex - 1],
+                            size: slideSize
+                        )
+                    } else {
+                        Color.clear.frame(width: width, height: height)
                     }
 
-                    carouselSlide(image: currentImage, size: CGSize(width: width, height: height))
-                        .scaleEffect(zoomScale)
+                    // Slot 1: Current asset (ALWAYS centered)
+                    AssetSlideView(
+                        asset: currentAsset,
+                        size: slideSize,
+                        isCenter: true,
+                        zoomScale: zoomScale,
+                        verticalOffset: dragOffset.height
+                    )
 
+                    // Slot 2: Next asset or empty placeholder
                     if triageState.currentIndex < triageState.totalCount - 1 {
-                        carouselSlide(image: nextImage, size: CGSize(width: width, height: height))
+                        AssetSlideView(
+                            asset: triageState.assets[triageState.currentIndex + 1],
+                            size: slideSize
+                        )
+                    } else {
+                        Color.clear.frame(width: width, height: height)
                     }
                 }
-                .offset(x: carouselOffset(width: width))
+                .offset(x: dragOffset.width)
                 .gesture(horizontalSwipeGesture)
                 .simultaneousGesture(magnificationGesture)
                 .onTapGesture(count: 2) {
-                    // Double-tap to Keep on Phone (Instagram heart-pop style)
-                    applyTriageDecision(.backupKeep)
-                }
-
-                if isLoadingImage && currentImage == nil {
-                    ProgressView().tint(.white)
+                    // Double-tap: Reset zoom if zoomed in, otherwise trigger Keep (Instagram pop)
+                    if zoomScale > 1.05 {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            zoomScale = 1.0
+                        }
+                    } else {
+                        applyTriageDecision(.backupKeep)
+                    }
                 }
 
                 // Instagram-style spring popup overlay in center
@@ -259,27 +273,6 @@ public struct SingleTriageView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .clipped()
         }
-    }
-
-    private func carouselOffset(width: CGFloat) -> CGFloat {
-        let baseOffset = (triageState.currentIndex > 0) ? -(width + 16) : 0
-        return baseOffset + dragOffset.width
-    }
-
-    private func carouselSlide(image: UIImage?, size: CGSize) -> some View {
-        ZStack {
-            Color.black
-            if let img = image {
-                Image(platformImage: img)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: size.width, height: size.height)
-                    .offset(y: dragOffset.height)
-            } else {
-                ProgressView().tint(.white)
-            }
-        }
-        .frame(width: size.width, height: size.height)
     }
 
     // Instagram-style Spring Pop Overlay
@@ -302,7 +295,6 @@ public struct SingleTriageView: View {
         .scaleEffect(popScale)
         .opacity(popOpacity)
         .allowsHitTesting(false)
-        .zIndex(50)
     }
 
     private func decisionBadgeColor(for decision: TriageDecision) -> Color {
@@ -310,7 +302,7 @@ public struct SingleTriageView: View {
         case .trash: return Color.triageTrash
         case .backupOnly: return Color.triageBackupOnly
         case .backupKeep: return Color.triageBackupKeep
-        case .unsorted: return Color.slate500
+        case .unsorted: return Color.white.opacity(0.4)
         }
     }
 
@@ -325,10 +317,10 @@ public struct SingleTriageView: View {
 
     private func decisionPopLabel(for decision: TriageDecision) -> String {
         switch decision {
-        case .trash: return "TRASH"
-        case .backupOnly: return "HD ONLY"
-        case .backupKeep: return "KEEP ON PHONE"
-        case .unsorted: return "UNSORTED"
+        case .trash: return "Delete from Phone"
+        case .backupOnly: return "HD Only (Offload)"
+        case .backupKeep: return "Keep on Phone"
+        case .unsorted: return "Unsorted"
         }
     }
 
@@ -336,99 +328,100 @@ public struct SingleTriageView: View {
 
     private var magnificationGesture: some Gesture {
         MagnificationGesture()
-            .onChanged { scale in
-                zoomScale = max(1.0, min(5.0, scale))
+            .onChanged { value in
+                zoomScale = max(1.0, min(value, 4.0))
             }
             .onEnded { _ in
                 if zoomScale < 1.05 {
-                    zoomScale = 1.0
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        zoomScale = 1.0
+                    }
                 }
             }
     }
 
     private var horizontalSwipeGesture: some Gesture {
-        DragGesture()
-            .onChanged { val in
+        DragGesture(minimumDistance: 10, coordinateSpace: .local)
+            .onChanged { value in
                 guard zoomScale <= 1.05 else { return }
-                let dx = val.translation.width
-                let dy = val.translation.height
 
+                let dx = value.translation.width
+                let dy = value.translation.height
+
+                // If horizontal drag dominates, track finger 1:1 with carousel offset
                 if abs(dx) > abs(dy) {
-                    var horizontalShift = dx
+                    var offset = dx
+                    // Rubber banding resistance at boundaries
                     if (triageState.currentIndex == 0 && dx > 0) ||
-                       (triageState.currentIndex >= triageState.totalCount - 1 && dx < 0) {
-                        horizontalShift = dx * 0.35
+                       (triageState.currentIndex == triageState.totalCount - 1 && dx < 0) {
+                        offset = dx * 0.35
                     }
-                    dragOffset = CGSize(width: horizontalShift, height: 0)
+                    dragOffset = CGSize(width: offset, height: 0)
                 } else {
-                    dragOffset = CGSize(width: 0, height: dy * 0.5)
+                    // Vertical drag tracking for triage flick
+                    dragOffset = CGSize(width: 0, height: dy * 0.6)
                 }
             }
-            .onEnded { val in
+            .onEnded { value in
                 guard zoomScale <= 1.05 else { return }
-                let dx = val.translation.width
-                let dy = val.translation.height
 
-                // Vertical gestures: Swipe Down = Trash, Swipe Up = HD Only
+                let dx = value.translation.width
+                let dy = value.translation.height
+
+                // Vertical Dominant Gesture (Swipe Down = Trash, Swipe Up = HD Only)
                 if abs(dy) > 55 && abs(dy) > abs(dx) * 1.3 {
-                    withAnimation(.easeOut(duration: 0.15)) {
+                    withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
                         dragOffset = .zero
                     }
                     if dy > 55 {
-                        // Swipe DOWN: Trash!
                         applyTriageDecision(.trash)
                     } else if dy < -55 {
-                        // Swipe UP: HD Only!
                         applyTriageDecision(.backupOnly)
                     }
                     return
                 }
 
-                // Horizontal carousel snap
-                if abs(dx) > 60 {
-                    autoAdvanceTask?.cancel()
-                    if dx < 0 && triageState.currentIndex < triageState.totalCount - 1 {
-                        withAnimation(.easeOut(duration: 0.2)) {
-                            triageState.goToNext()
-                            dragOffset = .zero
-                        }
-                    } else if dx > 0 && triageState.currentIndex > 0 {
-                        withAnimation(.easeOut(duration: 0.2)) {
-                            triageState.goToPrevious()
-                            dragOffset = .zero
-                        }
-                    } else {
-                        withAnimation(.easeOut(duration: 0.2)) {
-                            dragOffset = .zero
-                        }
+                // Horizontal Carousel Paging
+                let threshold: CGFloat = 60
+                if dx < -threshold && triageState.currentIndex < triageState.totalCount - 1 {
+                    // Dragged left -> advance to next photo
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        dragOffset = .zero
+                        triageState.goToNext()
+                    }
+                } else if dx > threshold && triageState.currentIndex > 0 {
+                    // Dragged right -> go back to previous photo
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        dragOffset = .zero
+                        triageState.goToPrevious()
                     }
                 } else {
-                    withAnimation(.easeOut(duration: 0.2)) {
+                    // Snap back smoothly
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
                         dragOffset = .zero
                     }
                 }
             }
     }
 
-    // MARK: - Bottom Toolbar & Scrubber
+    // MARK: - Filmstrip & Bottom Action Toolbar
 
     private var nativeBottomToolbar: some View {
         VStack(spacing: 0) {
             // Filmstrip Scrubber
             FilmstripScrubberView()
-                .padding(.bottom, 2)
+                .frame(height: 72)
 
-            // 0.5pt Hairline Divider
-            Rectangle()
-                .fill(Color.white.opacity(0.12))
-                .frame(height: 0.5)
-
-            // 5-Item Apple Action Row
+            // Standard Apple Triage Action Bar
             HStack(spacing: 0) {
-                // Prev Photo
+                // Previous
                 Button {
                     triggerHapticFeedback(0)
-                    triageState.goToPrevious()
+                    autoAdvanceTask?.cancel()
+                    popDecision = nil
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        triageState.goToPrevious()
+                    }
                 } label: {
                     VStack(spacing: 3) {
                         Image(systemName: "chevron.left")
@@ -439,54 +432,58 @@ public struct SingleTriageView: View {
                     .frame(maxWidth: .infinity)
                     .foregroundColor(triageState.currentIndex > 0 ? .white : .white.opacity(0.25))
                 }
-                .disabled(triageState.currentIndex == 0)
+                .disabled(triageState.currentIndex <= 0)
 
-                // Trash Action
+                // Trash
                 Button {
                     applyTriageDecision(.trash)
                 } label: {
                     VStack(spacing: 3) {
                         Image(systemName: "trash.fill")
-                            .font(.system(size: 20, weight: .medium))
+                            .font(.system(size: 20))
                         Text("Trash")
-                            .font(.system(size: 10, weight: .medium))
+                            .font(.system(size: 9, weight: .semibold))
                     }
                     .frame(maxWidth: .infinity)
-                    .foregroundColor(.triageTrash)
+                    .foregroundColor(Color.triageTrash)
                 }
 
-                // HD Only Action
+                // HD Only
                 Button {
                     applyTriageDecision(.backupOnly)
                 } label: {
                     VStack(spacing: 3) {
                         Image(systemName: "externaldrive.badge.arrow.down")
-                            .font(.system(size: 20, weight: .medium))
+                            .font(.system(size: 20))
                         Text("HD Only")
-                            .font(.system(size: 10, weight: .medium))
+                            .font(.system(size: 9, weight: .semibold))
                     }
                     .frame(maxWidth: .infinity)
-                    .foregroundColor(.triageBackupOnly)
+                    .foregroundColor(Color.triageBackupOnly)
                 }
 
-                // Keep Action
+                // Keep
                 Button {
                     applyTriageDecision(.backupKeep)
                 } label: {
                     VStack(spacing: 3) {
                         Image(systemName: "iphone.badge.checkmark")
-                            .font(.system(size: 20, weight: .medium))
+                            .font(.system(size: 20, weight: .bold))
                         Text("Keep")
-                            .font(.system(size: 10, weight: .medium))
+                            .font(.system(size: 9, weight: .semibold))
                     }
                     .frame(maxWidth: .infinity)
-                    .foregroundColor(.triageBackupKeep)
+                    .foregroundColor(Color.triageBackupKeep)
                 }
 
-                // Next Photo
+                // Next
                 Button {
                     triggerHapticFeedback(0)
-                    triageState.goToNext()
+                    autoAdvanceTask?.cancel()
+                    popDecision = nil
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        triageState.goToNext()
+                    }
                 } label: {
                     VStack(spacing: 3) {
                         Image(systemName: "chevron.right")
@@ -531,7 +528,9 @@ public struct SingleTriageView: View {
             try? await Task.sleep(nanoseconds: 130_000_000)
             guard !Task.isCancelled else { return }
             popDecision = nil
-            triageState.goToNext()
+            withAnimation(.easeOut(duration: 0.25)) {
+                triageState.goToNext()
+            }
         }
     }
 
@@ -545,37 +544,6 @@ public struct SingleTriageView: View {
         df.dateStyle = .medium
         df.timeStyle = .none
         return df.string(from: date)
-    }
-
-    private func reloadImage() async {
-        guard let asset = currentAsset else {
-            currentImage = nil
-            prevImage = nil
-            nextImage = nil
-            return
-        }
-        isLoadingImage = true
-        dragOffset = .zero
-
-        let loaded = await photoKitManager.loadFullImage(for: asset)
-
-        // Preload adjacent cached thumbnails for 60fps peeking
-        var prevLoaded: UIImage? = nil
-        var nextLoaded: UIImage? = nil
-        let idx = triageState.currentIndex
-        if idx > 0 && idx - 1 < triageState.assets.count {
-            prevLoaded = await photoKitManager.loadThumbnail(for: triageState.assets[idx - 1])
-        }
-        if idx + 1 < triageState.assets.count {
-            nextLoaded = await photoKitManager.loadThumbnail(for: triageState.assets[idx + 1])
-        }
-
-        await MainActor.run {
-            self.currentImage = loaded
-            self.prevImage = prevLoaded
-            self.nextImage = nextLoaded
-            self.isLoadingImage = false
-        }
     }
 
     private func triggerHapticFeedback(_ style: Int) {
@@ -598,6 +566,57 @@ public struct SingleTriageView: View {
             Text("No Photos Available")
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundColor(.white)
+        }
+    }
+}
+
+/// Individual slide in the carousel, loading and caching its asset image asynchronously
+public struct AssetSlideView: View {
+    @EnvironmentObject public var photoKitManager: PhotoKitManager
+    public let asset: TriageAsset?
+    public let size: CGSize
+    public var isCenter: Bool = false
+    public var zoomScale: CGFloat = 1.0
+    public var verticalOffset: CGFloat = 0.0
+
+    @State private var slideImage: UIImage? = nil
+    @State private var isLoading: Bool = false
+
+    public init(asset: TriageAsset?, size: CGSize, isCenter: Bool = false, zoomScale: CGFloat = 1.0, verticalOffset: CGFloat = 0.0) {
+        self.asset = asset
+        self.size = size
+        self.isCenter = isCenter
+        self.zoomScale = zoomScale
+        self.verticalOffset = verticalOffset
+    }
+
+    public var body: some View {
+        ZStack {
+            Color.black
+            if let img = slideImage {
+                Image(platformImage: img)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: size.width, height: size.height)
+                    .scaleEffect(isCenter ? zoomScale : 1.0)
+                    .offset(y: isCenter ? verticalOffset : 0)
+            } else if asset != nil {
+                ProgressView().tint(.white)
+            }
+        }
+        .frame(width: size.width, height: size.height)
+        .clipped()
+        .task(id: asset?.id) {
+            guard let asset = asset else {
+                slideImage = nil
+                return
+            }
+            isLoading = true
+            let loaded = await photoKitManager.loadThumbnail(for: asset, size: CGSize(width: size.width * 2, height: size.height * 2))
+            await MainActor.run {
+                self.slideImage = loaded
+                self.isLoading = false
+            }
         }
     }
 }

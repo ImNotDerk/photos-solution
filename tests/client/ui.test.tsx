@@ -351,14 +351,44 @@ describe('SingleView Component', () => {
     // Status banner appears
     expect(screen.getByTestId('status-banner')).toBeDefined();
 
-    // Auto-advance triggers after 250ms
+    // Auto-advance does NOT trigger prematurely at 250ms (allows spring animation to settle)
     expect(onNext).not.toHaveBeenCalled();
-    vi.advanceTimersByTime(260);
+    vi.advanceTimersByTime(250);
+    expect(onNext).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(110);
     expect(onNext).toHaveBeenCalled();
     vi.useRealTimers();
   });
 
-  it('renders video element for video primary bundles (.mov, .mp4, .m4v) and handles invalid dates gracefully', () => {
+  it('virtualizes carousel slides rendering only adjacent window of items to conserve DOM and memory', () => {
+    // Generate 100 mock bundles
+    const manyBundles: AssetBundle[] = Array.from({ length: 100 }, (_, i) => ({
+      ...mockBundles[0],
+      id: `bundle-${i}`,
+      canonicalName: `IMG_${1000 + i}`,
+    }));
+
+    render(
+      <SingleView
+        bundle={manyBundles[50]}
+        bundles={manyBundles}
+        currentIndex={50}
+        totalCount={100}
+        unsortedCount={100}
+        onDecision={onDecision}
+      />
+    );
+
+    const track = screen.getByTestId('carousel-track');
+    // Only current (50) and adjacent (49, 51) are rendered in DOM, not 100 nodes
+    expect(track.children.length).toBeLessThanOrEqual(3);
+    expect(screen.getByTestId('carousel-slide-50')).toBeDefined();
+    expect(screen.getByTestId('carousel-slide-49')).toBeDefined();
+    expect(screen.getByTestId('carousel-slide-51')).toBeDefined();
+    expect(screen.queryByTestId('carousel-slide-10')).toBeNull();
+  });
+
+  it('renders video element for video primary bundles (.mov, .mp4, .m4v) with interactive pointer events and handles invalid dates gracefully', () => {
     const mp4Bundle: AssetBundle = {
       ...mockBundles[2],
       previewPath: '/staging/IMG_1003.MP4',
@@ -376,9 +406,10 @@ describe('SingleView Component', () => {
       />
     );
 
-    const videoEl = container.querySelector('video');
-    expect(videoEl).toBeDefined();
-    expect(videoEl?.getAttribute('src')).toBe('/staging/IMG_1003.MP4');
+    const video = container.querySelector('video');
+    expect(video).toBeDefined();
+    expect(video?.className).toContain('pointer-events-auto');
+    expect(video?.getAttribute('src')).toBe('/staging/IMG_1003.MP4');
     expect(screen.getByText('invalid-date-string')).toBeDefined();
   });
 });
@@ -755,8 +786,8 @@ describe('App Controller Component', () => {
     // Immediately after click, current photo is still IMG_1001 (transient feedback visible)
     expect(screen.getByText('IMG_1001')).toBeDefined();
 
-    // Wait for the 250ms debounced auto-advance
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    // Wait for the debounced auto-advance
+    await new Promise((resolve) => setTimeout(resolve, 400));
 
     // Advances to IMG_1002 (did NOT double advance to IMG_1003!)
     expect(screen.getByText('IMG_1002')).toBeDefined();
