@@ -177,8 +177,11 @@ public final class TriageState: ObservableObject, Sendable {
     }
 
     /// Records a decision for the given asset identifier and pushes the change onto the undo stack.
+    /// Ignores redundant calls when the decision does not change.
     public func setDecision(assetId: String, decision: TriageDecision) {
         let prev = decisions[assetId] ?? .unsorted
+        guard prev != decision else { return }
+
         decisions[assetId] = decision
 
         let index = assets.firstIndex(where: { $0.id == assetId })
@@ -319,5 +322,10 @@ public final class TriageState: ObservableObject, Sendable {
         self.isSyncing = false
         self.syncProgress = 1.0
         self.syncStatusText = text
+    }
+
+    public func failSync(errorText: String) {
+        self.isSyncing = false
+        self.syncStatusText = errorText
     }
 }

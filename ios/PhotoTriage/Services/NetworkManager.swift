@@ -35,6 +35,25 @@ public enum NetworkError: LocalizedError, Equatable, Sendable {
             return "Server error (HTTP \(statusCode)): \(message)"
         }
     }
+
+    public var recoverySuggestion: String? {
+        switch self {
+        case .invalidUrl:
+            return "Verify the server URL in Settings (e.g. http://10.142.1.127:3000) and ensure the IP and port are correct."
+        case .serverUnreachable:
+            return "Ensure your iPhone and Mac are connected to the same local Wi-Fi network and that the Mac server process is running. You can safely retry without data loss."
+        case .invalidDecision:
+            return "Only assets marked for backup ('HD Only' or 'Keep') can be uploaded. Change the triage decision and retry."
+        case .missingPrimaryResource:
+            return "The selected photo or video could not be loaded from your library. Check that the original file is downloaded from iCloud."
+        case .uploadFailed:
+            return "The transfer was interrupted. Check Wi-Fi connection and tap Retry. No changes were committed."
+        case .verificationFailed:
+            return "The server rejected file integrity verification or hard drive write. Ensure your external hard drive is mounted on the Mac and retry."
+        case .serverError(let statusCode, _):
+            return "The server returned HTTP \(statusCode). Check that the external hard drive is plugged in and mounted on your Mac, then retry."
+        }
+    }
 }
 
 // MARK: - Server Response DTOs
@@ -301,13 +320,17 @@ public final class NetworkManager: ObservableObject, Sendable {
                 try writeStringToHandle(fileHandle, "Content-Type: \(res.mimeType)\r\n\r\n")
 
                 if let fileURL = res.fileURL {
-                    // Stream from disk in chunks (1MB buffer) for large video files
+                    // Stream from disk in chunks (1MB buffer) inside autoreleasepool for large video files
                     let readHandle = try FileHandle(forReadingFrom: fileURL)
                     defer { try? readHandle.close() }
                     while true {
-                        let chunk = readHandle.readData(ofLength: 1024 * 1024)
-                        if chunk.isEmpty { break }
-                        try fileHandle.write(contentsOf: chunk)
+                        let hasMore: Bool = try autoreleasepool {
+                            let chunk = readHandle.readData(ofLength: 1024 * 1024)
+                            if chunk.isEmpty { return false }
+                            try fileHandle.write(contentsOf: chunk)
+                            return true
+                        }
+                        if !hasMore { break }
                     }
                 } else if let data = res.data {
                     try fileHandle.write(contentsOf: data)
@@ -376,6 +399,14 @@ public final class NetworkManager: ObservableObject, Sendable {
 
             guard verifiedCount > 0 else {
                 let netErr = NetworkError.verificationFailed("Server reported 0 verified files")
+                self.lastError = netErr.localizedDescription
+                throw netErr
+            }
+
+            // Invariant: Response must confirm a valid non-empty SHA-256 hash in ledger entries
+            guard let firstEntry = entries.first,
+                  !firstEntry.sha256.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                let netErr = NetworkError.verificationFailed("Server response did not confirm a valid SHA-256 ledger checksum")
                 self.lastError = netErr.localizedDescription
                 throw netErr
             }

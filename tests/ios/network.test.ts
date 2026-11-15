@@ -92,7 +92,7 @@ describe('iOS Network & Triage State Contract Tests (Task 3)', () => {
       expect(networkCode).toContain('guard resources.contains(where: { $0.role == .primary }) else');
     });
 
-    it('defines comprehensive NetworkError enum covering all failure modes', () => {
+    it('defines comprehensive NetworkError enum covering all failure modes with retry guidance', () => {
       const expectedErrors = [
         'invalidUrl',
         'serverUnreachable',
@@ -105,6 +105,22 @@ describe('iOS Network & Triage State Contract Tests (Task 3)', () => {
       for (const err of expectedErrors) {
         expect(networkCode).toContain(`case ${err}`);
       }
+
+      // Spec / Review Requirement: Recovery suggestion for retry guidance
+      expect(networkCode).toContain('public var recoverySuggestion: String?');
+      expect(networkCode).toContain('same local Wi-Fi network');
+      expect(networkCode).toContain('safely retry without data loss');
+      expect(networkCode).toContain('external hard drive is mounted');
+    });
+
+    it('enforces explicit SHA-256 confirmation check in upload verification response', () => {
+      expect(networkCode).toContain('Server response did not confirm a valid SHA-256 ledger checksum');
+      expect(networkCode).toContain('!firstEntry.sha256.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty');
+    });
+
+    it('wraps 1MB chunk file streaming in autoreleasepool to prevent memory accumulation', () => {
+      expect(networkCode).toContain('try autoreleasepool {');
+      expect(networkCode).toContain('readData(ofLength: 1024 * 1024)');
     });
 
     it('defines DTO models matching server ledger and upload response schemas', () => {
@@ -153,12 +169,14 @@ describe('iOS Network & Triage State Contract Tests (Task 3)', () => {
       expect(stateCode).toContain('public var currentAsset: TriageAsset?');
     });
 
-    it('provides setDecision and undo restoring previous decision and asset index', () => {
+    it('provides setDecision and undo restoring previous decision and asset index, ignoring duplicate taps', () => {
       expect(stateCode).toContain('public func setDecision(assetId: String, decision: TriageDecision)');
       expect(stateCode).toContain('public func setDecision(_ decision: TriageDecision, for asset: TriageAsset)');
       expect(stateCode).toContain('public func triageCurrent(as decision: TriageDecision, autoAdvance: Bool = true)');
       expect(stateCode).toContain('public func undo() -> TriageAction?');
       expect(stateCode).toContain('public var canUndo: Bool');
+      // Guard against redundant duplicate action pushes
+      expect(stateCode).toContain('guard prev != decision else { return }');
     });
 
     it('declares TriageFilter and filteredAssets helper', () => {
@@ -180,10 +198,11 @@ describe('iOS Network & Triage State Contract Tests (Task 3)', () => {
       expect(stateCode).toContain('STRICT SAFETY INVARIANT: `backup_keep` assets are NEVER included in this list.');
     });
 
-    it('provides sync state management helpers', () => {
+    it('provides sync state management helpers including failSync', () => {
       expect(stateCode).toContain('public func startSync(total: Int, initialText: String = "Starting sync...")');
       expect(stateCode).toContain('public func updateSync(completed: Int, total: Int, text: String)');
       expect(stateCode).toContain('public func finishSync(text: String = "Sync complete")');
+      expect(stateCode).toContain('public func failSync(errorText: String)');
     });
   });
 
@@ -401,7 +420,12 @@ assert(NetworkManager.sanitizeUrl("http://10.142.1.127:3000/") == "http://10.142
 assert(NetworkManager.sanitizeUrl("10.142.1.127:3000") == "http://10.142.1.127:3000", "Must prepend http://")
 assert(NetworkManager.sanitizeUrl("https://mac.local:3000//") == "https://mac.local:3000", "Must keep https")
 
-// 3. Verify TriageState state machine & undo stack
+// 3. Verify NetworkError recovery suggestions & retry guidance
+let netError = NetworkError.serverUnreachable("Connection refused")
+assert(netError.recoverySuggestion != nil, "Must provide recovery suggestion")
+assert(netError.recoverySuggestion!.contains("Wi-Fi"), "Must include Wi-Fi guidance")
+
+// 4. Verify TriageState state machine & undo stack
 let state = TriageState()
 assert(state.totalCount == 0, "Initial totalCount must be 0")
 assert(state.canUndo == false, "Initial canUndo must be false")
@@ -410,6 +434,10 @@ state.setDecision(assetId: "A1", decision: .trash)
 assert(state.decision(for: "A1") == .trash, "A1 must be trash")
 assert(state.undoStack.count == 1, "Undo stack must have 1 action")
 assert(state.canUndo == true, "canUndo must be true")
+
+// Duplicate decision tap must NOT create duplicate undo action
+state.setDecision(assetId: "A1", decision: .trash)
+assert(state.undoStack.count == 1, "Undo stack count must remain 1 on duplicate decision")
 
 state.setDecision(assetId: "A2", decision: .backupKeep)
 assert(state.decision(for: "A2") == .backupKeep, "A2 must be backupKeep")
@@ -426,6 +454,13 @@ let undoneA1 = state.undo()
 assert(undoneA1?.assetId == "A1", "Undone asset must be A1")
 assert(state.decision(for: "A1") == .unsorted, "A1 must revert to unsorted")
 assert(state.canUndo == false, "Undo stack must be empty")
+
+// 5. Verify failSync helper
+state.startSync(total: 10, initialText: "Starting sync...")
+assert(state.isSyncing == true, "isSyncing must be true")
+state.failSync(errorText: "Transfer interrupted by user")
+assert(state.isSyncing == false, "isSyncing must be false after failSync")
+assert(state.syncStatusText == "Transfer interrupted by user", "Status text must reflect failure")
 
 print("SUCCESS: Swift native assertions verified completely.")
 `;
