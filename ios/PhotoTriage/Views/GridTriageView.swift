@@ -281,10 +281,10 @@ public struct GridTriageView: View {
 
             // Bulk Assignment Buttons
             HStack(spacing: 8) {
-                bulkButton(title: "🗑️ TRASH", decision: .trash, color: .triageTrash)
-                bulkButton(title: "💾 HD ONLY", decision: .backupOnly, color: .triageBackupOnly)
-                bulkButton(title: "💾+📱 KEEP", decision: .backupKeep, color: .triageBackupKeep)
-                bulkButton(title: "↩ UNSORT", decision: .unsorted, color: .slate400)
+                bulkButton(icon: "trash.fill", title: "TRASH", decision: .trash, color: .triageTrash)
+                bulkButton(icon: "externaldrive.fill", title: "HD ONLY", decision: .backupOnly, color: .triageBackupOnly)
+                bulkButton(icon: "iphone.badge.checkmark", title: "KEEP", decision: .backupKeep, color: .triageBackupKeep)
+                bulkButton(icon: "arrow.uturn.backward", title: "RESET", decision: .unsorted, color: .slate400)
             }
             .padding(.horizontal, 12)
             .padding(.bottom, 8)
@@ -292,7 +292,7 @@ public struct GridTriageView: View {
         .background(Color.slate900)
     }
 
-    private func bulkButton(title: String, decision: TriageDecision, color: Color) -> some View {
+    private func bulkButton(icon: String, title: String, decision: TriageDecision, color: Color) -> some View {
         Button {
             triggerHapticFeedback(1)
             for id in selectedAssetIds {
@@ -301,14 +301,18 @@ public struct GridTriageView: View {
             selectedAssetIds.removeAll()
             isSelectMode = false
         } label: {
-            Text(title)
-                .font(.system(size: 11, weight: .bold, design: .rounded))
-                .foregroundColor(color)
-                .frame(maxWidth: .infinity)
-                .frame(height: 42)
-                .background(Color.slate800)
-                .cornerRadius(8)
-                .utilitarianBorder(color: color.opacity(0.6), width: 1, cornerRadius: 8)
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.system(size: 11, weight: .bold))
+                Text(title)
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+            }
+            .foregroundColor(color)
+            .frame(maxWidth: .infinity)
+            .frame(height: 42)
+            .background(Color.slate800)
+            .cornerRadius(8)
+            .utilitarianBorder(color: color.opacity(0.6), width: 1, cornerRadius: 8)
         }
         .disabled(selectedAssetIds.isEmpty)
         .opacity(selectedAssetIds.isEmpty ? 0.4 : 1.0)

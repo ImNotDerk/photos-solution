@@ -117,7 +117,7 @@ export const SingleView: React.FC<SingleViewProps> = ({
             disabled={isImporting}
             className="w-full max-w-xs py-3 px-4 border border-indigo-500 bg-indigo-950 hover:bg-indigo-900 active:bg-indigo-800 disabled:opacity-50 text-indigo-200 text-xs font-bold uppercase tracking-wider transition-colors flex items-center justify-center gap-2"
           >
-            {isImporting ? 'Importing from Downloads...' : '📥 Import Latest AirDrop from Downloads'}
+            {isImporting ? 'Importing from Downloads...' : 'Import Latest AirDrop from Downloads'}
           </button>
         )}
       </div>

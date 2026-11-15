@@ -138,13 +138,16 @@ describe('iOS Utilitarian SwiftUI Views Contract Tests (Task 4)', () => {
 
     it('contains three tactile action buttons matching spec', () => {
       // 1. Trash button
-      expect(code).toContain('🗑️ Trash');
+      expect(code).toContain('trash.fill');
+      expect(code).toContain('"Trash"');
       expect(code).toContain('applyDecision(.trash)');
       // 2. HD Only button
-      expect(code).toContain('💾 HD Only');
+      expect(code).toContain('externaldrive.fill');
+      expect(code).toContain('"HD Only"');
       expect(code).toContain('applyDecision(.backupOnly)');
       // 3. HD+Phone button
-      expect(code).toContain('💾+📱 HD+Phone');
+      expect(code).toContain('iphone.badge.checkmark');
+      expect(code).toContain('"HD+Phone"');
       expect(code).toContain('applyDecision(.backupKeep)');
     });
 

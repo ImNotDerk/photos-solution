@@ -342,11 +342,11 @@ public struct SingleTriageView: View {
                     applyDecision(.trash)
                 } label: {
                     VStack(spacing: 3) {
-                        HStack(spacing: 4) {
+                        HStack(spacing: 6) {
                             Image(systemName: "trash.fill")
                                 .font(.system(size: 15, weight: .bold))
-                            Text("🗑️ Trash")
-                                .font(.system(size: 14, weight: .bold, design: .rounded))
+                            Text("Trash")
+                                .font(.system(size: 15, weight: .bold, design: .rounded))
                         }
                         Text("Delete from phone")
                             .font(.system(size: 10, weight: .medium))
@@ -366,11 +366,11 @@ public struct SingleTriageView: View {
                     applyDecision(.backupOnly)
                 } label: {
                     VStack(spacing: 3) {
-                        HStack(spacing: 4) {
+                        HStack(spacing: 6) {
                             Image(systemName: "externaldrive.fill")
                                 .font(.system(size: 15, weight: .bold))
-                            Text("💾 HD Only")
-                                .font(.system(size: 14, weight: .bold, design: .rounded))
+                            Text("HD Only")
+                                .font(.system(size: 15, weight: .bold, design: .rounded))
                         }
                         Text("Offload to HD")
                             .font(.system(size: 10, weight: .medium))
@@ -390,11 +390,11 @@ public struct SingleTriageView: View {
                     applyDecision(.backupKeep)
                 } label: {
                     VStack(spacing: 3) {
-                        HStack(spacing: 4) {
+                        HStack(spacing: 6) {
                             Image(systemName: "iphone.badge.checkmark")
                                 .font(.system(size: 15, weight: .bold))
-                            Text("💾+📱 HD+Phone")
-                                .font(.system(size: 14, weight: .bold, design: .rounded))
+                            Text("HD+Phone")
+                                .font(.system(size: 15, weight: .bold, design: .rounded))
                         }
                         Text("Backup & keep")
                             .font(.system(size: 10, weight: .medium))
@@ -411,43 +411,46 @@ public struct SingleTriageView: View {
             .padding(.horizontal, 14)
 
             // Bottom Navigation Stepper Row (44pt touch targets)
-            HStack(spacing: 12) {
+            HStack(spacing: 8) {
                 Button {
                     triggerHapticFeedback(0)
                     triageState.goToPrevious()
                 } label: {
-                    HStack(spacing: 6) {
+                    HStack(spacing: 5) {
                         Image(systemName: "chevron.left")
                         Text("PREV")
                     }
                     .font(.system(size: 13, weight: .bold, design: .rounded))
                     .foregroundColor(triageState.canGoPrevious ? .slate100 : .slate600)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 44)
+                    .frame(width: 84, height: 44)
                     .background(Color.slate800)
                     .cornerRadius(10)
                     .utilitarianBorder(color: triageState.canGoPrevious ? .slate700 : .slate800, width: 1, cornerRadius: 10)
                 }
                 .disabled(!triageState.canGoPrevious)
 
+                Spacer()
+
                 // Gesture hint
-                Text("SWIPE: ◀ TRASH | UP: HD | KEEP: ▶")
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                Text("SWIPE: ◀ TRASH | ▲ HD | KEEP ▶")
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
                     .foregroundColor(.slate400)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+
+                Spacer()
 
                 Button {
                     triggerHapticFeedback(0)
                     triageState.goToNext()
                 } label: {
-                    HStack(spacing: 6) {
+                    HStack(spacing: 5) {
                         Text("NEXT")
                         Image(systemName: "chevron.right")
                     }
                     .font(.system(size: 13, weight: .bold, design: .rounded))
                     .foregroundColor(triageState.canGoNext ? .slate100 : .slate600)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 44)
+                    .frame(width: 84, height: 44)
                     .background(Color.slate800)
                     .cornerRadius(10)
                     .utilitarianBorder(color: triageState.canGoNext ? .slate700 : .slate800, width: 1, cornerRadius: 10)
