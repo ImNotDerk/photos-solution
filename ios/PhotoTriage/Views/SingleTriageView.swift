@@ -20,6 +20,7 @@ public struct SingleTriageView: View {
     @State private var zoomScale: CGFloat = 1.0
     @State private var dragOffset: CGSize = .zero
     @State private var showDetailsSheet: Bool = false
+    @State private var showingMonthSheet: Bool = false
     @State private var autoAdvanceTask: Task<Void, Never>? = nil
 
     // Instagram-style spring popup overlay
@@ -67,6 +68,13 @@ public struct SingleTriageView: View {
                     hardDriveRoot: "/Volumes/PhotosHD"
                 )
             }
+        }
+        .sheet(isPresented: $showingMonthSheet) {
+            MonthSelectionView { _ in
+                showingMonthSheet = false
+            }
+            .environmentObject(triageState)
+            .environmentObject(photoKitManager)
         }
     }
 
@@ -559,13 +567,77 @@ public struct SingleTriageView: View {
     }
 
     private var emptyStateView: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "photo.stack")
-                .font(.system(size: 40))
-                .foregroundColor(.white.opacity(0.3))
-            Text("No Photos Available")
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundColor(.white)
+        VStack(spacing: 20) {
+            HStack {
+                Button {
+                    triggerHapticFeedback(0)
+                    onDismissToGrid?()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 16, weight: .semibold))
+                        Text("Photos")
+                            .font(.system(size: 16))
+                    }
+                    .foregroundColor(.white)
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+
+            Spacer()
+
+            VStack(spacing: 12) {
+                Image(systemName: "photo.stack")
+                    .font(.system(size: 44))
+                    .foregroundColor(.white.opacity(0.35))
+                Text("No Photos Available")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundColor(.white)
+                Text(photoKitManager.isAuthorized ? "Select a month to start triaging photos." : "Photos access is needed to browse Camera Roll.")
+                    .font(.system(size: 13))
+                    .foregroundColor(.white.opacity(0.6))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+            }
+
+            if !photoKitManager.isAuthorized {
+                Button {
+                    Task {
+                        _ = await photoKitManager.requestAuthorization()
+                        if photoKitManager.isAuthorized {
+                            let months = await photoKitManager.fetchMonths()
+                            if let firstMonth = months.first {
+                                let assets = photoKitManager.fetchAssets(for: firstMonth)
+                                triageState.loadMonth(firstMonth, assets: assets)
+                            }
+                        }
+                    }
+                } label: {
+                    Text("Grant Photos Access")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 10)
+                        .background(Color.blue)
+                        .cornerRadius(10)
+                }
+            } else {
+                Button {
+                    showingMonthSheet = true
+                } label: {
+                    Text("Select a Month")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 10)
+                        .background(Color.blue)
+                        .cornerRadius(10)
+                }
+            }
+
+            Spacer()
         }
     }
 }

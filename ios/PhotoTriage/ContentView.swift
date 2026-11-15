@@ -88,14 +88,19 @@ public struct ContentView: View {
         .task {
             // Check network status on startup
             await networkManager.pingServer()
-            if triageState.selectedMonth == nil && photoKitManager.months.isEmpty {
-                if photoKitManager.isAuthorized {
-                    let months = await photoKitManager.fetchMonths()
-                    if let firstMonth = months.first {
-                        let assets = photoKitManager.fetchAssets(for: firstMonth)
-                        triageState.loadMonth(firstMonth, assets: assets)
-                    }
+            if !photoKitManager.isAuthorized && photoKitManager.authorizationStatus == .notDetermined {
+                _ = await photoKitManager.requestAuthorization()
+            }
+            if photoKitManager.isAuthorized {
+                if photoKitManager.months.isEmpty {
+                    _ = await photoKitManager.fetchMonths()
                 }
+                if let firstMonth = photoKitManager.months.first, triageState.selectedMonth == nil {
+                    let assets = photoKitManager.fetchAssets(for: firstMonth)
+                    triageState.loadMonth(firstMonth, assets: assets)
+                }
+            } else if photoKitManager.authorizationStatus == .denied || photoKitManager.authorizationStatus == .restricted {
+                selectedTab = .grid
             }
         }
     }
