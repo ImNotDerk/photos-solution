@@ -37,7 +37,7 @@ public struct GridTriageView: View {
     @AppStorage("isAdvancedModeEnabled") private var isAdvancedModeEnabled: Bool = false
 
     private let columns = [
-        GridItem(.adaptive(minimum: 96, maximum: 120), spacing: 4)
+        GridItem(.adaptive(minimum: 104, maximum: 128), spacing: 2)
     ]
 
     private static let dayHeaderFormatter: DateFormatter = {
@@ -80,10 +80,10 @@ public struct GridTriageView: View {
 
     public var body: some View {
         ZStack {
-            Color.slate950.ignoresSafeArea()
+            Color.black.ignoresSafeArea()
 
             VStack(spacing: 0) {
-                // Header & Batch Filter Bar
+                // Apple Header & Category Filter Bar
                 filterHeaderBar
 
                 // Thumbnail Grid
@@ -95,7 +95,7 @@ public struct GridTriageView: View {
                     assetGridScrollView
                 }
 
-                // Bottom Bulk Action Bar (when in select mode)
+                // Bottom Floating Bulk Action Bar (when in select mode)
                 if isSelectMode {
                     bulkActionBar
                 }
@@ -110,12 +110,9 @@ public struct GridTriageView: View {
             // Mode & Select Toggle Row
             HStack(spacing: 8) {
                 HStack(spacing: 6) {
-                    Image(systemName: "square.grid.2x2.fill")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundColor(.consoleCyan)
                     Text("\(triageState.selectedMonth?.displayName ?? "NO BATCH")")
-                        .font(.system(size: 14, weight: .bold, design: .rounded))
-                        .foregroundColor(.slate100)
+                        .font(.system(size: 17, weight: .bold))
+                        .foregroundColor(.white)
                 }
 
                 Spacer()
@@ -124,15 +121,15 @@ public struct GridTriageView: View {
                 if triageState.estimatedBytesReclaimedOnPhone > 0 {
                     HStack(spacing: 4) {
                         Image(systemName: "arrow.down.circle.fill")
-                            .font(.system(size: 10, weight: .bold))
-                        Text("FREED \(triageState.formattedBytesReclaimedOnPhone)")
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .font(.system(size: 11, weight: .semibold))
+                        Text("Freed \(triageState.formattedBytesReclaimedOnPhone)")
+                            .font(.system(size: 11, weight: .semibold))
                     }
-                    .foregroundColor(.consoleCyan)
-                    .padding(.horizontal, 6)
+                    .foregroundColor(.blue)
+                    .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(Color.consoleCyan.opacity(0.16))
-                    .cornerRadius(6)
+                    .background(Color.blue.opacity(0.15))
+                    .clipShape(Capsule())
                 }
 
                 if !triageState.assets.isEmpty {
@@ -142,56 +139,51 @@ public struct GridTriageView: View {
                         isAdvancedModeEnabled.toggle()
                     } label: {
                         Image(systemName: isAdvancedModeEnabled ? "info.circle.fill" : "info.circle")
-                            .font(.system(size: 13, weight: .bold))
-                            .foregroundColor(isAdvancedModeEnabled ? .consoleCyan : .slate400)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 6)
-                            .background(Color.slate800)
-                            .cornerRadius(8)
-                            .utilitarianBorder(color: isAdvancedModeEnabled ? .consoleCyan : .slate700, width: 1, cornerRadius: 8)
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(isAdvancedModeEnabled ? .blue : .white.opacity(0.7))
+                            .padding(6)
+                            .background(Color.white.opacity(0.1))
+                            .clipShape(Circle())
                     }
 
                     Button {
                         triggerHapticFeedback(0)
-                        isSelectMode.toggle()
-                        if !isSelectMode {
-                            selectedAssetIds.removeAll()
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            isSelectMode.toggle()
+                            if !isSelectMode {
+                                selectedAssetIds.removeAll()
+                            }
                         }
                     } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: isSelectMode ? "checkmark.circle.fill" : "checkmark.circle")
-                                .font(.system(size: 13, weight: .bold))
-                            Text(isSelectMode ? "DONE" : "SELECT")
-                                .font(.system(size: 13, weight: .bold, design: .rounded))
-                        }
-                        .foregroundColor(isSelectMode ? .consoleCyan : .slate100)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(isSelectMode ? Color.consoleCyan.opacity(0.2) : Color.slate800)
-                        .cornerRadius(8)
-                        .utilitarianBorder(color: isSelectMode ? .consoleCyan : .slate700, width: 1, cornerRadius: 8)
+                        Text(isSelectMode ? "Done" : "Select")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundColor(.blue)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(Color.white.opacity(0.1))
+                            .clipShape(Capsule())
                     }
                 }
             }
-            .padding(.horizontal, 14)
+            .padding(.horizontal, 16)
             .padding(.top, 8)
 
-            // Segmented Filter Bar
+            // Segmented Filter Bar (Apple Capsule Style)
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
+                HStack(spacing: 6) {
                     ForEach(TriageFilter.allCases) { filter in
                         filterTabButton(filter: filter)
                     }
                 }
-                .padding(.horizontal, 14)
+                .padding(.horizontal, 16)
                 .padding(.vertical, 4)
             }
 
             Rectangle()
-                .fill(Color.slate800)
-                .frame(height: 1)
+                .fill(Color.white.opacity(0.12))
+                .frame(height: 0.5)
         }
-        .background(Color.slate900)
+        .background(Color(red: 0.08, green: 0.08, blue: 0.09).opacity(0.95))
     }
 
     private func filterTabButton(filter: TriageFilter) -> some View {
@@ -202,23 +194,19 @@ public struct GridTriageView: View {
             triggerHapticFeedback(0)
             currentFilter = filter
         } label: {
-            HStack(spacing: 5) {
-                Text(filter.rawValue.uppercased())
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
+            HStack(spacing: 4) {
+                Text(filter.rawValue)
+                    .font(.system(size: 12, weight: isSelected ? .semibold : .medium))
 
-                Text("[\(count)]")
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                Text("\(count)")
+                    .font(.system(size: 11, weight: .regular))
+                    .foregroundColor(isSelected ? .white.opacity(0.8) : .white.opacity(0.4))
             }
-            .foregroundColor(isSelected ? .slate100 : .slate400)
+            .foregroundColor(isSelected ? .white : .white.opacity(0.7))
             .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-            .background(isSelected ? Color.slate700 : Color.slate800)
-            .cornerRadius(8)
-            .utilitarianBorder(
-                color: isSelected ? .consoleCyan : .slate700,
-                width: 1,
-                cornerRadius: 8
-            )
+            .padding(.vertical, 6)
+            .background(isSelected ? Color.blue : Color.white.opacity(0.1))
+            .clipShape(Capsule())
         }
     }
 
@@ -283,16 +271,12 @@ public struct GridTriageView: View {
     // MARK: - Bulk Action Bar
 
     private var bulkActionBar: some View {
-        VStack(spacing: 6) {
-            Rectangle()
-                .fill(Color.slate800)
-                .frame(height: 1)
-
+        VStack(spacing: 8) {
             // Select All / Deselect All Row
             HStack {
-                Text("SELECTED: \(selectedAssetIds.count) OF \(displayAssets.count)")
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
-                    .foregroundColor(.consoleCyan)
+                Text("\(selectedAssetIds.count) of \(displayAssets.count) Selected")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.white)
 
                 Spacer()
 
@@ -304,24 +288,32 @@ public struct GridTriageView: View {
                     }
                 } label: {
                     Text(selectedAssetIds.count == displayAssets.count ? "DESELECT ALL" : "SELECT ALL")
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
-                        .foregroundColor(.slate300)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.blue)
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.top, 4)
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
 
             // Bulk Assignment Buttons
             HStack(spacing: 8) {
-                bulkButton(icon: "trash.fill", title: "TRASH", decision: .trash, color: .triageTrash)
-                bulkButton(icon: "externaldrive.fill", title: "HD ONLY", decision: .backupOnly, color: .triageBackupOnly)
-                bulkButton(icon: "iphone.badge.checkmark", title: "KEEP", decision: .backupKeep, color: .triageBackupKeep)
-                bulkButton(icon: "arrow.uturn.backward", title: "RESET", decision: .unsorted, color: .slate400)
+                bulkButton(icon: "trash.fill", title: "Trash", decision: .trash, color: .triageTrash)
+                bulkButton(icon: "externaldrive.fill", title: "HD Only", decision: .backupOnly, color: .triageBackupOnly)
+                bulkButton(icon: "iphone.badge.checkmark", title: "Keep", decision: .backupKeep, color: .triageBackupKeep)
+                bulkButton(icon: "arrow.uturn.backward", title: "Reset", decision: .unsorted, color: .white.opacity(0.6))
             }
             .padding(.horizontal, 12)
-            .padding(.bottom, 8)
+            .padding(.bottom, 10)
         }
-        .background(Color.slate900)
+        .background(Color(red: 0.12, green: 0.12, blue: 0.14).opacity(0.96))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Color.white.opacity(0.15), lineWidth: 0.5)
+        )
+        .shadow(color: .black.opacity(0.6), radius: 12, y: 4)
+        .padding(.horizontal, 12)
+        .padding(.bottom, 6)
     }
 
     private func bulkButton(icon: String, title: String, decision: TriageDecision, color: Color) -> some View {
@@ -335,19 +327,18 @@ public struct GridTriageView: View {
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: icon)
-                    .font(.system(size: 11, weight: .bold))
+                    .font(.system(size: 12, weight: .bold))
                 Text(title)
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .font(.system(size: 12, weight: .semibold))
             }
             .foregroundColor(color)
             .frame(maxWidth: .infinity)
-            .frame(height: 42)
-            .background(Color.slate800)
-            .cornerRadius(8)
-            .utilitarianBorder(color: color.opacity(0.6), width: 1, cornerRadius: 8)
+            .frame(height: 38)
+            .background(color.opacity(0.16))
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .disabled(selectedAssetIds.isEmpty)
-        .opacity(selectedAssetIds.isEmpty ? 0.4 : 1.0)
+        .opacity(selectedAssetIds.isEmpty ? 0.35 : 1.0)
     }
 
     // MARK: - Empty States
@@ -413,7 +404,7 @@ public struct GridThumbnailCell: View {
         ZStack(alignment: .topTrailing) {
             // Thumbnail Image Canvas
             ZStack {
-                Color.slate900
+                Color(red: 0.12, green: 0.12, blue: 0.14)
 
                 if let image = displayImage {
                     Image(platformImage: image)
@@ -422,82 +413,74 @@ public struct GridThumbnailCell: View {
                 } else {
                     ProgressView()
                         .scaleEffect(0.6)
-                        .tint(.slate500)
+                        .tint(.white.opacity(0.4))
                 }
             }
-            .frame(height: 105)
-            .cornerRadius(8)
+            .frame(height: 110)
             .clipped()
 
-            // Status Border Badge (Left side)
+            // Status Badge Overlay (Apple Photos Style)
             VStack {
                 Spacer()
-                HStack(spacing: 2) {
+                HStack(spacing: 3) {
                     if decision != .unsorted {
                         HStack(spacing: 3) {
                             Image(systemName: decision.iconName)
-                                .font(.system(size: 9, weight: .bold))
-                            Text(decision.shortTitle.uppercased())
-                                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                .font(.system(size: 8, weight: .bold))
+                            Text(decision.shortTitle)
+                                .font(.system(size: 9, weight: .semibold))
                         }
-                        .foregroundColor(decision.color)
+                        .foregroundColor(.white)
                         .padding(.horizontal, 5)
-                        .padding(.vertical, 3)
-                        .background(Color.slate950.opacity(0.85))
-                        .cornerRadius(4)
-                        .utilitarianBorder(color: decision.color, width: 1, cornerRadius: 4)
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 2)
-                        .background(Color.slate950.opacity(0.85))
-                        .utilitarianBorder(color: decision.color, width: 1, cornerRadius: 2)
+                        .padding(.vertical, 2.5)
+                        .background(decision.color.opacity(0.92))
+                        .clipShape(Capsule())
+                        .shadow(color: .black.opacity(0.4), radius: 2)
                     }
 
                     Spacer()
 
                     if asset.isVideo {
                         Text(asset.formattedDuration ?? "VID")
-                            .font(.system(size: 8, weight: .bold, design: .monospaced))
-                            .foregroundColor(.slate200)
-                            .padding(.horizontal, 3)
-                            .padding(.vertical, 1)
-                            .background(Color.slate950.opacity(0.8))
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 2)
+                            .background(Color.black.opacity(0.65))
+                            .cornerRadius(3)
                     } else if isAdvancedMode, let size = asset.formattedSize as String?, size != "--" {
                         Text(size)
-                            .font(.system(size: 8, weight: .bold, design: .monospaced))
-                            .foregroundColor(.slate300)
-                            .padding(.horizontal, 3)
-                            .padding(.vertical, 1)
-                            .background(Color.slate950.opacity(0.8))
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundColor(.white.opacity(0.9))
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 2)
+                            .background(Color.black.opacity(0.65))
+                            .cornerRadius(3)
                     }
                 }
-                .padding(3)
+                .padding(4)
             }
 
             // Selection Checkmark (in Multi-select mode)
             if isSelectMode {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(isSelected ? Color.consoleCyan : Color.slate950.opacity(0.7))
-                        .frame(width: 20, height: 20)
+                    Circle()
+                        .fill(isSelected ? Color.blue : Color.black.opacity(0.4))
+                        .frame(width: 22, height: 22)
                         .overlay(
-                            RoundedRectangle(cornerRadius: 2)
-                                .stroke(isSelected ? Color.consoleCyan : Color.slate600, lineWidth: 1)
+                            Circle()
+                                .stroke(Color.white, lineWidth: 1.5)
                         )
 
                     if isSelected {
                         Image(systemName: "checkmark")
                             .font(.system(size: 11, weight: .bold))
-                            .foregroundColor(.slate950)
+                            .foregroundColor(.white)
                     }
                 }
-                .padding(4)
+                .padding(6)
             }
         }
-        .utilitarianBorder(
-            color: isSelected ? .consoleCyan : (decision != .unsorted ? decision.color.opacity(0.6) : .slate800),
-            width: isSelected ? 2 : 1,
-            cornerRadius: 2
-        )
         .task(id: asset.id) {
             if let cached = PhotoKitManager.shared.cachedThumbnail(for: asset) {
                 thumbnail = cached
@@ -522,28 +505,22 @@ public struct DaySectionHeader: View {
     public var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "calendar")
-                .font(.system(size: 11, weight: .bold))
-                .foregroundColor(.consoleCyan)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(.blue)
 
             Text(title)
-                .font(.system(size: 13, weight: .bold, design: .rounded))
-                .foregroundColor(.slate100)
+                .font(.system(size: 14, weight: .bold))
+                .foregroundColor(.white)
 
             Spacer()
 
-            Text("\(count) \(count == 1 ? "ITEM" : "ITEMS")")
-                .font(.system(size: 10, weight: .bold, design: .monospaced))
-                .foregroundColor(.slate400)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(Color.slate800)
-                .cornerRadius(4)
+            Text("\(count) \(count == 1 ? "Photo" : "Photos")")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(.white.opacity(0.5))
         }
-        .padding(.horizontal, 10)
-        .padding(.top, 8)
+        .padding(.horizontal, 14)
+        .padding(.top, 10)
         .padding(.bottom, 6)
-        .background(Color.slate950.opacity(0.96))
-        .utilitarianBorder(color: Color.slate800, width: 1, cornerRadius: 4)
-        .padding(.bottom, 2)
+        .background(Color.black.opacity(0.88))
     }
 }
