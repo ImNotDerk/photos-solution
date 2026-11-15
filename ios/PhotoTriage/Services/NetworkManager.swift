@@ -244,6 +244,55 @@ public final class NetworkManager: ObservableObject, Sendable {
         }
     }
 
+    // MARK: - Auto-Detection Engine
+
+    /// Probes candidate URLs in order of preference:
+    /// 1. Direct USB wired connection: http://172.20.10.2:3000
+    /// 2. Alternative USB link: http://172.20.10.1:3000
+    /// 3. Currently configured URL
+    /// 4. Default server URL
+    /// Returns the first responsive server URL and automatically sets it if found.
+    @MainActor
+    public func autoDetectServer() async -> String? {
+        let candidates = [
+            "http://172.20.10.2:3000",
+            "http://172.20.10.1:3000",
+            serverUrl,
+            NetworkManager.defaultServerUrl
+        ]
+
+        var seen = Set<String>()
+        var uniqueCandidates: [String] = []
+        for c in candidates {
+            let sanitized = Self.sanitizeUrl(c)
+            if !seen.contains(sanitized) {
+                seen.insert(sanitized)
+                uniqueCandidates.append(sanitized)
+            }
+        }
+
+        for candidate in uniqueCandidates {
+            guard let url = URL(string: "\(candidate)/api/session") else { continue }
+            var request = URLRequest(url: url)
+            request.httpMethod = "GET"
+            request.timeoutInterval = 1.5
+
+            do {
+                let (data, response) = try await session.data(for: request)
+                if let httpResponse = response as? HTTPURLResponse, (200..<300).contains(httpResponse.statusCode) {
+                    if let _ = try? JSONDecoder().decode(ServerSessionStatus.self, from: data) {
+                        self.setServerUrl(candidate)
+                        self.isReachable = true
+                        return candidate
+                    }
+                }
+            } catch {
+                continue
+            }
+        }
+        return nil
+    }
+
     // MARK: - Checksum Computation Engine
 
     /// Computes the SHA-256 hex digest of an ExtractedResource using Apple CryptoKit.

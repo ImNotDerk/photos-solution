@@ -76,6 +76,11 @@ describe('iOS Network & Triage State Contract Tests (Task 3)', () => {
       expect(networkCode).toContain('@Published public var isReachable: Bool');
     });
 
+    it('declares autoDetectServer() probing wired USB and local endpoints', () => {
+      expect(networkCode).toContain('func autoDetectServer() async -> String?');
+      expect(networkCode).toContain('172.20.10.2:3000');
+    });
+
     it('declares uploadBundle supporting both explicit resources and convenience PhotoKit extraction', () => {
       expect(networkCode).toContain('func uploadBundle(');
       expect(networkCode).toContain('asset: TriageAsset,');

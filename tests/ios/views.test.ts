@@ -171,6 +171,12 @@ describe('iOS Utilitarian SwiftUI Views Contract Tests (Task 4)', () => {
       expect(code).toContain('MagnificationGesture');
       expect(code).toContain('zoomScale');
     });
+
+    it('provides Advanced vs Minimal telemetry toggle and live freed storage readout', () => {
+      expect(code).toContain('@AppStorage("isAdvancedModeEnabled")');
+      expect(code).toContain('info.circle');
+      expect(code).toContain('formattedBytesReclaimedOnPhone');
+    });
   });
 
   describe('GridTriageView Contract Alignment', () => {
@@ -217,6 +223,12 @@ describe('iOS Utilitarian SwiftUI Views Contract Tests (Task 4)', () => {
       expect(code).toContain('pinnedViews: [.sectionHeaders]');
       expect(code).toContain('DaySectionHeader');
       expect(code).toContain('Section(header:');
+    });
+
+    it('supports live freed storage badge and info toggle in header', () => {
+      expect(code).toContain('@AppStorage("isAdvancedModeEnabled")');
+      expect(code).toContain('info.circle');
+      expect(code).toContain('formattedBytesReclaimedOnPhone');
     });
   });
 
@@ -292,6 +304,14 @@ describe('iOS Utilitarian SwiftUI Views Contract Tests (Task 4)', () => {
       expect(code).toContain('OOM-Safe Streaming Video');
       expect(code).toContain('100% SHA-256 Ledger Verification');
       expect(code).toContain('Atomic Post-Verification Deletion');
+    });
+
+    it('provides AUTO-DETECT server button and ADVANCED TELEMETRY toggle', () => {
+      expect(code).toContain('AUTO-DETECT');
+      expect(code).toContain('runAutoDetect()');
+      expect(code).toContain('networkManager.autoDetectServer()');
+      expect(code).toContain('ADVANCED TELEMETRY');
+      expect(code).toContain('@AppStorage("isAdvancedModeEnabled")');
     });
   });
 

@@ -8,9 +8,12 @@ public struct SettingsView: View {
 
     @State private var inputUrl: String = ""
     @State private var isPinging: Bool = false
+    @State private var isAutoDetecting: Bool = false
     @State private var pingResult: String? = nil
     @State private var sessionStatus: ServerSessionStatus? = nil
     @State private var statusError: String? = nil
+
+    @AppStorage("isAdvancedModeEnabled") private var isAdvancedModeEnabled: Bool = false
 
     public init() {}
 
@@ -30,6 +33,9 @@ public struct SettingsView: View {
 
                         // Live Diagnostics Card
                         diagnosticsCard
+
+                        // Display & Interface Preferences
+                        displayPreferencesCard
 
                         // System Architecture & Safety Invariants Card
                         safetyGuaranteesCard
@@ -78,12 +84,37 @@ public struct SettingsView: View {
 
     private var serverConfigCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
+            HStack(spacing: 8) {
                 Text("MAC BACKUP SERVER HOST:")
                     .font(.system(size: 11, weight: .bold, design: .monospaced))
                     .foregroundColor(.slate400)
 
                 Spacer()
+
+                Button {
+                    triggerHapticFeedback(1)
+                    runAutoDetect()
+                } label: {
+                    HStack(spacing: 4) {
+                        if isAutoDetecting {
+                            ProgressView()
+                                .scaleEffect(0.6)
+                                .tint(.consoleCyan)
+                        } else {
+                            Image(systemName: "bolt.fill")
+                                .font(.system(size: 9))
+                        }
+                        Text(isAutoDetecting ? "DETECTING..." : "AUTO-DETECT")
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    }
+                    .foregroundColor(.consoleCyan)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.consoleCyan.opacity(0.15))
+                    .cornerRadius(6)
+                    .utilitarianBorder(color: .consoleCyan, width: 1, cornerRadius: 6)
+                }
+                .disabled(isAutoDetecting)
 
                 Button {
                     triggerHapticFeedback(0)
@@ -276,6 +307,55 @@ public struct SettingsView: View {
             }
             isPinging = false
         }
+    }
+
+    private func runAutoDetect() {
+        guard !isAutoDetecting else { return }
+        isAutoDetecting = true
+        pingResult = nil
+        statusError = nil
+
+        Task {
+            if let detected = await networkManager.autoDetectServer() {
+                inputUrl = detected
+                saveUrl()
+                runDiagnostics()
+                triggerHapticFeedback(1)
+            } else {
+                pingResult = "FAILED: No server detected on USB (172.20.10.2) or local network."
+                triggerHapticFeedback(2)
+            }
+            isAutoDetecting = false
+        }
+    }
+
+    // MARK: - Display Preferences Card
+
+    private var displayPreferencesCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("DISPLAY & INTERFACE:")
+                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                .foregroundColor(.slate400)
+
+            Toggle(isOn: $isAdvancedModeEnabled) {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Image(systemName: isAdvancedModeEnabled ? "info.circle.fill" : "info.circle")
+                            .foregroundColor(.consoleCyan)
+                        Text("ADVANCED TELEMETRY")
+                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                            .foregroundColor(.slate100)
+                    }
+                    Text("Show resolution, codec, destination path, and file size badges")
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(.slate400)
+                }
+            }
+            .tint(.consoleCyan)
+        }
+        .padding(10)
+        .background(Color.slate900)
+        .utilitarianBorder(color: .slate800, width: 1, cornerRadius: 4)
     }
 
     // MARK: - Safety Guarantees Card

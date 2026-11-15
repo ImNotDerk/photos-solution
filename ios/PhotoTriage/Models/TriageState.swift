@@ -304,6 +304,38 @@ public final class TriageState: ObservableObject, Sendable {
         assets.filter { !(decisions[$0.id] ?? .unsorted).shouldDeleteFromPhone }
     }
 
+    // MARK: - Storage Savings Telemetry
+
+    /// Estimated storage bytes to be freed on iPhone (assets marked for deletion: trash + backup_only).
+    public var estimatedBytesReclaimedOnPhone: Int64 {
+        assetsToDelete.reduce(into: Int64(0)) { total, asset in
+            total += (asset.fileSize > 0 ? asset.fileSize : 3_500_000)
+        }
+    }
+
+    /// Formatted human-readable string for storage freed on iPhone (e.g. "1.4 GB", "420 MB").
+    public var formattedBytesReclaimedOnPhone: String {
+        let formatter = ByteCountFormatter()
+        formatter.allowedUnits = [.useGB, .useMB]
+        formatter.countStyle = .file
+        return formatter.string(fromByteCount: estimatedBytesReclaimedOnPhone)
+    }
+
+    /// Estimated storage bytes to be transferred to the external hard drive (backup_only + backup_keep).
+    public var estimatedBytesToHardDrive: Int64 {
+        assetsToUpload.reduce(into: Int64(0)) { total, asset in
+            total += (asset.fileSize > 0 ? asset.fileSize : 3_500_000)
+        }
+    }
+
+    /// Formatted human-readable string for storage backed up to hard drive.
+    public var formattedBytesToHardDrive: String {
+        let formatter = ByteCountFormatter()
+        formatter.allowedUnits = [.useGB, .useMB]
+        formatter.countStyle = .file
+        return formatter.string(fromByteCount: estimatedBytesToHardDrive)
+    }
+
     // MARK: - Sync State Management
 
     public func startSync(total: Int, initialText: String = "Starting sync...") {

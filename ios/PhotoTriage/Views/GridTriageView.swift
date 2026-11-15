@@ -34,6 +34,8 @@ public struct GridTriageView: View {
     @State private var isSelectMode: Bool = false
     @State private var selectedAssetIds: Set<String> = []
 
+    @AppStorage("isAdvancedModeEnabled") private var isAdvancedModeEnabled: Bool = false
+
     private let columns = [
         GridItem(.adaptive(minimum: 96, maximum: 120), spacing: 4)
     ]
@@ -106,7 +108,7 @@ public struct GridTriageView: View {
     private var filterHeaderBar: some View {
         VStack(spacing: 8) {
             // Mode & Select Toggle Row
-            HStack {
+            HStack(spacing: 8) {
                 HStack(spacing: 6) {
                     Image(systemName: "square.grid.2x2.fill")
                         .font(.system(size: 13, weight: .bold))
@@ -118,7 +120,37 @@ public struct GridTriageView: View {
 
                 Spacer()
 
+                // Live Storage Reclaimed Counter
+                if triageState.estimatedBytesReclaimedOnPhone > 0 {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.down.circle.fill")
+                            .font(.system(size: 10, weight: .bold))
+                        Text("FREED \(triageState.formattedBytesReclaimedOnPhone)")
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    }
+                    .foregroundColor(.consoleCyan)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 4)
+                    .background(Color.consoleCyan.opacity(0.16))
+                    .cornerRadius(6)
+                }
+
                 if !triageState.assets.isEmpty {
+                    // 1-Tap Info Mode Toggle
+                    Button {
+                        triggerHapticFeedback(0)
+                        isAdvancedModeEnabled.toggle()
+                    } label: {
+                        Image(systemName: isAdvancedModeEnabled ? "info.circle.fill" : "info.circle")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundColor(isAdvancedModeEnabled ? .consoleCyan : .slate400)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 6)
+                            .background(Color.slate800)
+                            .cornerRadius(8)
+                            .utilitarianBorder(color: isAdvancedModeEnabled ? .consoleCyan : .slate700, width: 1, cornerRadius: 8)
+                    }
+
                     Button {
                         triggerHapticFeedback(0)
                         isSelectMode.toggle()
@@ -361,6 +393,7 @@ public struct GridThumbnailCell: View {
     public let isSelected: Bool
 
     @State private var thumbnail: UIImage? = nil
+    @AppStorage("isAdvancedModeEnabled") private var isAdvancedMode: Bool = false
 
     public init(
         asset: TriageAsset,
@@ -423,6 +456,13 @@ public struct GridThumbnailCell: View {
                         Text(asset.formattedDuration ?? "VID")
                             .font(.system(size: 8, weight: .bold, design: .monospaced))
                             .foregroundColor(.slate200)
+                            .padding(.horizontal, 3)
+                            .padding(.vertical, 1)
+                            .background(Color.slate950.opacity(0.8))
+                    } else if isAdvancedMode, let size = asset.formattedSize as String?, size != "--" {
+                        Text(size)
+                            .font(.system(size: 8, weight: .bold, design: .monospaced))
+                            .foregroundColor(.slate300)
                             .padding(.horizontal, 3)
                             .padding(.vertical, 1)
                             .background(Color.slate950.opacity(0.8))

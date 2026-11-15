@@ -185,4 +185,16 @@ describe('iOS Model & PhotoKit Contract Tests (Task 2)', () => {
       expect(assetsToDelete).not.toContain('4'); // unsorted must never be deleted
     });
   });
+
+  describe('TriageState Storage Telemetry & Calculation', () => {
+    const triageStatePath = path.resolve(process.cwd(), 'ios/PhotoTriage/Models/TriageState.swift');
+    const swiftCode = fs.readFileSync(triageStatePath, 'utf8');
+
+    it('declares storage savings telemetry properties', () => {
+      expect(swiftCode).toContain('var estimatedBytesReclaimedOnPhone: Int64');
+      expect(swiftCode).toContain('var formattedBytesReclaimedOnPhone: String');
+      expect(swiftCode).toContain('var estimatedBytesToHardDrive: Int64');
+      expect(swiftCode).toContain('var formattedBytesToHardDrive: String');
+    });
+  });
 });

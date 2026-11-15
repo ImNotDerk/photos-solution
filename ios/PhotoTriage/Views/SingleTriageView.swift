@@ -22,6 +22,9 @@ public struct SingleTriageView: View {
     @State private var dragOffset: CGSize = .zero
     @State private var gestureDecisionHint: TriageDecision? = nil
 
+    // Information density setting
+    @AppStorage("isAdvancedModeEnabled") private var isAdvancedModeEnabled: Bool = false
+
     public init() {}
 
     public var currentAsset: TriageAsset? {
@@ -64,8 +67,8 @@ public struct SingleTriageView: View {
 
     private func metadataHeader(for asset: TriageAsset) -> some View {
         VStack(spacing: 6) {
-            // Index & Status Row
-            HStack {
+            // Index, Reclaimed Space & Info Toggle Row
+            HStack(spacing: 8) {
                 HStack(spacing: 6) {
                     Image(systemName: "folder.fill")
                         .font(.system(size: 12, weight: .bold))
@@ -77,6 +80,21 @@ public struct SingleTriageView: View {
 
                 Spacer()
 
+                // Live Storage Reclaimed Counter
+                if triageState.estimatedBytesReclaimedOnPhone > 0 {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.down.circle.fill")
+                            .font(.system(size: 10, weight: .bold))
+                        Text("FREED \(triageState.formattedBytesReclaimedOnPhone)")
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    }
+                    .foregroundColor(.consoleCyan)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 4)
+                    .background(Color.consoleCyan.opacity(0.16))
+                    .cornerRadius(6)
+                }
+
                 // Progress Counter
                 HStack(spacing: 4) {
                     Text("\(triageState.currentIndex + 1) of \(triageState.totalCount)")
@@ -87,29 +105,29 @@ public struct SingleTriageView: View {
                 .padding(.vertical, 4)
                 .background(Color.slate800)
                 .cornerRadius(6)
+
+                // 1-Tap Info Mode Toggle
+                Button {
+                    triggerHapticFeedback(0)
+                    isAdvancedModeEnabled.toggle()
+                } label: {
+                    Image(systemName: isAdvancedModeEnabled ? "info.circle.fill" : "info.circle")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(isAdvancedModeEnabled ? .consoleCyan : .slate400)
+                        .padding(5)
+                        .background(Color.slate800)
+                        .cornerRadius(6)
+                }
             }
 
-            // High-density Technical Spec Line
+            // Minimal Primary Info Line (always visible: Date & Media type badge)
             HStack(spacing: 8) {
-                // Filename
-                Text(asset.originalFilename ?? asset.canonicalName)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(.slate200)
-                    .lineLimit(1)
+                Text(asset.formattedDate)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundColor(.slate300)
 
                 Spacer()
 
-                // Dimensions
-                Text(asset.formattedDimensions)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundColor(.slate400)
-
-                // Size
-                Text(asset.formattedSize)
-                    .font(.system(size: 11, weight: .bold, design: .monospaced))
-                    .foregroundColor(.slate300)
-
-                // Media type badges
                 if asset.isLivePhoto {
                     badgeView(text: "LIVE", color: .consoleCyan)
                 }
@@ -118,17 +136,36 @@ public struct SingleTriageView: View {
                 }
             }
 
-            // Destination and timestamp
-            HStack {
-                Text("DATE: \(asset.formattedDate)")
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundColor(.slate400)
+            // Advanced Telemetry (Conditionally rendered when isAdvancedModeEnabled == true)
+            if isAdvancedModeEnabled {
+                HStack(spacing: 8) {
+                    Text(asset.originalFilename ?? asset.canonicalName)
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .foregroundColor(.slate200)
+                        .lineLimit(1)
 
-                Spacer()
+                    Spacer()
 
-                Text("DEST: /\(asset.targetYear)/\(asset.targetMonth)/")
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                    .foregroundColor(.consoleCyan)
+                    Text(asset.formattedDimensions)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(.slate400)
+
+                    Text(asset.formattedSize)
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundColor(.slate300)
+                }
+
+                HStack {
+                    Text("CAPTURE: \(asset.capturedAtISO.prefix(19))")
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(.slate400)
+
+                    Spacer()
+
+                    Text("DEST: /\(asset.targetYear)/\(asset.targetMonth)/")
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .foregroundColor(.consoleCyan)
+                }
             }
 
             Rectangle()
