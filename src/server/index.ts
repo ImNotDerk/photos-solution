@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import Fastify, { type FastifyInstance } from 'fastify';
 import fastifyCors from '@fastify/cors';
 import fastifyStatic from '@fastify/static';
+import fastifyMultipart from '@fastify/multipart';
 import QRCode from 'qrcode';
 import { routes, defaultSessionManager, SessionManager } from './routes.js';
 
@@ -170,6 +171,13 @@ export async function createServer(options?: ServerOptions): Promise<FastifyInst
   await app.register(fastifyCors, {
     origin: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  });
+
+  // Register Multipart for streaming uploads with 200MB file limit
+  await app.register(fastifyMultipart, {
+    limits: {
+      fileSize: 200 * 1024 * 1024,
+    },
   });
 
   const sessionManager = options?.sessionManager || defaultSessionManager;

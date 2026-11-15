@@ -2,7 +2,11 @@ import * as os from 'os';
 import * as path from 'path';
 import * as fsp from 'fs/promises';
 import * as fs from 'fs';
+import * as crypto from 'crypto';
+import { pipeline } from 'stream/promises';
+import { Transform } from 'stream';
 import type { FastifyInstance, FastifyPluginAsync } from 'fastify';
+import fastifyMultipart from '@fastify/multipart';
 import type {
   AssetBundle,
   BackupRequest,
@@ -15,8 +19,15 @@ import type {
 } from '../types/index.js';
 import { generateCleanupPayload } from './cleanup.js';
 import { scanStagingDirectory, importFromDownloads } from './ingest.js';
-import { checkDuplicates, loadLedger, LEDGER_BACKUP_DIR, LEDGER_BACKUP_FILENAME } from './ledger.js';
-import { executeBackup } from './backup.js';
+import {
+  checkDuplicates,
+  loadLedger,
+  saveLedger,
+  computeFileHash,
+  LEDGER_BACKUP_DIR,
+  LEDGER_BACKUP_FILENAME,
+} from './ledger.js';
+import { executeBackup, applySuffix } from './backup.js';
 
 export function computeCounts(bundles: AssetBundle[]): TriageCounts {
   const counts: TriageCounts = {
@@ -156,6 +167,14 @@ export const routes: FastifyPluginAsync<RoutesOptions> = async (
   options?: RoutesOptions
 ) => {
   const manager = options?.sessionManager || defaultSessionManager;
+
+  if (!fastify.hasContentTypeParser('multipart/form-data')) {
+    await fastify.register(fastifyMultipart, {
+      limits: {
+        fileSize: 200 * 1024 * 1024,
+      },
+    });
+  }
 
   /**
    * GET /api/session
@@ -492,6 +511,347 @@ export const routes: FastifyPluginAsync<RoutesOptions> = async (
       message: 'Cleanup completed successfully',
       session: manager.getState(),
     });
+  });
+
+  /**
+   * POST /api/upload
+   * Dedicated streaming multipart upload endpoint to receive asset bundles
+   * directly from native iOS app over local Wi-Fi.
+   *
+   * Form fields:
+   * - bundleId: string
+   * - canonicalName: string
+   * - capturedAt: string (ISO timestamp)
+   * - targetYear: string (e.g. "2024")
+   * - targetMonth: string (e.g. "JANUARY")
+   * - decision: 'backup_only' | 'backup_keep'
+   *
+   * File parts:
+   * - primary: required (main image/video)
+   * - live_video: optional (Live Photo companion video)
+   * - edit_sidecar: optional (AAE sidecar)
+   * - edited_render: optional (edited render image/video)
+   */
+  fastify.post('/api/upload', async (request, reply) => {
+    const query = request.query as Record<string, string> | undefined;
+    const currentState = manager.getState();
+    let hardDriveRoot = query?.hardDriveRoot || currentState.hardDriveRoot;
+
+    // Check hard drive access early if hardDriveRoot is already known
+    if (hardDriveRoot && !(await isHardDriveMounted(hardDriveRoot))) {
+      return reply.status(400).send({
+        success: false,
+        error: `Hard drive root "${hardDriveRoot}" is not mounted or accessible.`,
+      });
+    }
+
+    const tmpBase =
+      hardDriveRoot && (await isHardDriveMounted(hardDriveRoot))
+        ? path.join(hardDriveRoot, '.upload-tmp')
+        : path.join(os.tmpdir(), 'photo-triage-upload-tmp');
+
+    await fsp.mkdir(tmpBase, { recursive: true });
+
+    interface UploadedFile {
+      fieldname: string;
+      filename: string;
+      tmpPath: string;
+      size: number;
+      hash: string;
+    }
+
+    const fields: Record<string, string> = {};
+    const uploadedFiles: UploadedFile[] = [];
+
+    const cleanupTmpFiles = async () => {
+      for (const f of uploadedFiles) {
+        try {
+          await fsp.unlink(f.tmpPath);
+        } catch {
+          // ignore
+        }
+      }
+    };
+
+    try {
+      const parts = request.parts();
+      for await (const part of parts) {
+        if (part.type === 'file') {
+          const safeFilename = path.basename(part.filename || `${part.fieldname}.bin`);
+          const randomSuffix = crypto.randomBytes(6).toString('hex');
+          const tmpFilePath = path.join(
+            tmpBase,
+            `upload-${Date.now()}-${randomSuffix}-${safeFilename}`
+          );
+
+          let byteCount = 0;
+          const hashStream = crypto.createHash('sha256');
+
+          const meter = new Transform({
+            transform(chunk, _encoding, callback) {
+              byteCount += chunk.length;
+              hashStream.update(chunk);
+              callback(null, chunk);
+            },
+          });
+
+          const writeStream = fs.createWriteStream(tmpFilePath);
+
+          try {
+            await pipeline(part.file, meter, writeStream);
+          } catch (streamErr: any) {
+            try {
+              await fsp.unlink(tmpFilePath);
+            } catch {}
+            throw streamErr;
+          }
+
+          if (part.file.truncated) {
+            try {
+              await fsp.unlink(tmpFilePath);
+            } catch {}
+            await cleanupTmpFiles();
+            return reply.status(413).send({
+              success: false,
+              error: `File "${safeFilename}" exceeded 200MB limit.`,
+            });
+          }
+
+          uploadedFiles.push({
+            fieldname: part.fieldname,
+            filename: safeFilename,
+            tmpPath: tmpFilePath,
+            size: byteCount,
+            hash: hashStream.digest('hex'),
+          });
+        } else {
+          fields[part.fieldname] = String(part.value);
+        }
+      }
+    } catch (err: any) {
+      await cleanupTmpFiles();
+      return reply.status(400).send({
+        success: false,
+        error: `Failed to process multipart upload: ${err.message}`,
+      });
+    }
+
+    try {
+      if (fields.hardDriveRoot) {
+        hardDriveRoot = fields.hardDriveRoot;
+      }
+      if (!hardDriveRoot || !(await isHardDriveMounted(hardDriveRoot))) {
+        await cleanupTmpFiles();
+        return reply.status(400).send({
+          success: false,
+          error: `Hard drive root "${hardDriveRoot || ''}" is missing, unwritable, or not mounted.`,
+        });
+      }
+
+      // Write probe to catch read-only mounts
+      try {
+        const probeFile = path.join(
+          hardDriveRoot,
+          `.photo-triage-probe-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`
+        );
+        await fsp.writeFile(probeFile, '');
+        await fsp.unlink(probeFile);
+      } catch (err: any) {
+        await cleanupTmpFiles();
+        return reply.status(500).send({
+          success: false,
+          error: `Hard drive root "${hardDriveRoot}" is unwritable: ${err.message}`,
+        });
+      }
+
+      const bundleId = fields.bundleId;
+      if (!bundleId) {
+        await cleanupTmpFiles();
+        return reply.status(400).send({
+          success: false,
+          error: 'Missing required form field "bundleId".',
+        });
+      }
+
+      const decision = fields.decision;
+      if (!decision || (decision !== 'backup_only' && decision !== 'backup_keep')) {
+        await cleanupTmpFiles();
+        return reply.status(400).send({
+          success: false,
+          error: `Invalid or missing triage decision "${decision}". Must be "backup_only" or "backup_keep".`,
+        });
+      }
+
+      const primaryFile = uploadedFiles.find((f) => f.fieldname === 'primary');
+      if (!primaryFile) {
+        await cleanupTmpFiles();
+        return reply.status(400).send({
+          success: false,
+          error: 'Missing required file part "primary".',
+        });
+      }
+
+      const canonicalName = fields.canonicalName || bundleId;
+      const targetYear = fields.targetYear ? fields.targetYear.trim() : String(new Date().getFullYear());
+      const targetMonth = fields.targetMonth ? fields.targetMonth.trim().toUpperCase() : 'UNKNOWN';
+      const capturedAt = fields.capturedAt || new Date().toISOString();
+
+      const destDir = path.join(hardDriveRoot, targetYear, targetMonth);
+      await fsp.mkdir(destDir, { recursive: true });
+
+      // Collision Resolution
+      let suffixIndex = 1;
+      let safeSuffix = '';
+      interface ResolvedFile extends UploadedFile {
+        destPath: string;
+        destFilename: string;
+        alreadyMatches: boolean;
+      }
+      let resolvedFiles: ResolvedFile[] = [];
+
+      while (true) {
+        const candidateSuffix = suffixIndex === 1 ? '' : `_${suffixIndex}`;
+        let collisionFound = false;
+        const tempResolved: ResolvedFile[] = [];
+        const candidateDestPaths = new Set<string>();
+
+        for (const file of uploadedFiles) {
+          const destFilename = applySuffix(file.filename, candidateSuffix);
+          const destPath = path.join(destDir, destFilename);
+
+          if (candidateDestPaths.has(destPath)) {
+            collisionFound = true;
+            break;
+          }
+          candidateDestPaths.add(destPath);
+
+          let destExists = false;
+          try {
+            await fsp.access(destPath);
+            destExists = true;
+          } catch {
+            destExists = false;
+          }
+
+          if (destExists) {
+            const destHash = await computeFileHash(destPath);
+            if (destHash !== file.hash) {
+              collisionFound = true;
+              break;
+            } else {
+              tempResolved.push({
+                ...file,
+                destPath,
+                destFilename,
+                alreadyMatches: true,
+              });
+            }
+          } else {
+            tempResolved.push({
+              ...file,
+              destPath,
+              destFilename,
+              alreadyMatches: false,
+            });
+          }
+        }
+
+        if (collisionFound) {
+          suffixIndex++;
+          if (suffixIndex > 1000) {
+            throw new Error(`Exceeded maximum collision resolution attempts for bundle ${bundleId}`);
+          }
+          continue;
+        }
+
+        safeSuffix = candidateSuffix;
+        resolvedFiles = tempResolved;
+        break;
+      }
+
+      // Move files to destination
+      for (const rf of resolvedFiles) {
+        if (rf.alreadyMatches) {
+          try {
+            await fsp.unlink(rf.tmpPath);
+          } catch {}
+        } else {
+          try {
+            await fsp.rename(rf.tmpPath, rf.destPath);
+          } catch (renameErr: any) {
+            if (renameErr.code === 'EXDEV') {
+              await fsp.copyFile(rf.tmpPath, rf.destPath);
+              await fsp.unlink(rf.tmpPath);
+            } else {
+              throw renameErr;
+            }
+          }
+        }
+      }
+
+      // Verification Phase on Hard Drive
+      let verifiedCount = 0;
+      for (const rf of resolvedFiles) {
+        const stat = await fsp.stat(rf.destPath);
+        if (stat.size !== rf.size) {
+          throw new Error(
+            `Byte size mismatch for "${rf.destPath}": expected ${rf.size}, got ${stat.size}`
+          );
+        }
+        const destHash = await computeFileHash(rf.destPath);
+        if (destHash !== rf.hash) {
+          throw new Error(
+            `SHA-256 hash mismatch for "${rf.destPath}": expected ${rf.hash}, got ${destHash}`
+          );
+        }
+        verifiedCount++;
+      }
+
+      // Atomic Commit to Ledger
+      const primaryResolved = resolvedFiles.find((f) => f.fieldname === 'primary')!;
+      const relPath = path
+        .relative(hardDriveRoot, primaryResolved.destPath)
+        .split(path.sep)
+        .join('/');
+
+      const canonicalNameWithSuffix = safeSuffix ? `${canonicalName}${safeSuffix}` : canonicalName;
+      const entryIdWithSuffix = safeSuffix ? `${bundleId}${safeSuffix}` : bundleId;
+
+      const entry: LedgerEntry = {
+        id: entryIdWithSuffix,
+        canonicalName: canonicalNameWithSuffix,
+        sha256: primaryResolved.hash,
+        targetRelPath: relPath,
+        capturedAt,
+        backedUpAt: new Date().toISOString(),
+        decision: decision as 'backup_only' | 'backup_keep',
+      };
+
+      const ledger = await loadLedger(hardDriveRoot);
+      ledger.set(entry.sha256, entry);
+      await saveLedger(hardDriveRoot, ledger);
+
+      // Clean up tmp directory if empty
+      try {
+        const remaining = await fsp.readdir(tmpBase);
+        if (remaining.length === 0) {
+          await fsp.rmdir(tmpBase);
+        }
+      } catch {}
+
+      return reply.status(200).send({
+        success: true,
+        verifiedCount,
+        entries: [entry],
+      });
+    } catch (err: any) {
+      await cleanupTmpFiles();
+      return reply.status(500).send({
+        success: false,
+        verifiedCount: 0,
+        errors: [err.message || String(err)],
+      });
+    }
   });
 };
 
