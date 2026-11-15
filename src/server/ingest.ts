@@ -1,7 +1,11 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import exifr from 'exifr';
 import type { AssetBundle, AssetFile, AssetFileRole } from '../types/index.js';
+
+const execFileAsync = promisify(execFile);
 
 const MONTH_NAMES = [
   'JANUARY',
@@ -18,8 +22,8 @@ const MONTH_NAMES = [
   'DECEMBER',
 ];
 
-const VIDEO_EXTENSIONS = new Set(['.mov', '.mp4', '.m4v']);
-const IMAGE_EXTENSIONS = new Set([
+export const VIDEO_EXTENSIONS = new Set(['.mov', '.mp4', '.m4v']);
+export const IMAGE_EXTENSIONS = new Set([
   '.heic',
   '.heif',
   '.jpg',
@@ -45,13 +49,14 @@ interface DiscoveredFile {
 }
 
 /**
- * Normalizes a filename to its canonical asset key.
- * Strips 'IMG_E' -> 'IMG_' so edited renders and originals share one bundle key.
+ * Normalizes a filename to its canonical asset key consistently in uppercase.
+ * Strips 'IMG_E' -> 'IMG_' so edited renders and originals share one bundle key,
+ * regardless of file system or AirDrop casing mismatches (e.g. img_e1002.heic and IMG_1002.MOV).
  */
 export function extractCanonicalName(filename: string): string {
   const ext = path.extname(filename);
   const baseName = path.basename(filename, ext);
-  return baseName.replace(/^IMG_E/i, 'IMG_');
+  return baseName.toUpperCase().replace(/^IMG_E/, 'IMG_');
 }
 
 /**
@@ -101,7 +106,7 @@ async function walkDirectory(dir: string): Promise<DiscoveredFile[]> {
 }
 
 /**
- * Parses capture date from file EXIF/QuickTime metadata using exifr.
+ * Parses capture date from file EXIF metadata using exifr.
  * Falls back to null if no valid metadata exists.
  */
 export async function extractExifDate(filePath: string): Promise<Date | null> {
@@ -143,12 +148,37 @@ export async function extractExifDate(filePath: string): Promise<Date | null> {
 }
 
 /**
- * Extracts targetYear and targetMonth from an ISO date string or Date object.
+ * Extracts creation date from QuickTime/video metadata via macOS `mdls`.
+ * Returns null if mdls is unavailable or file has no indexed creation date.
+ */
+export async function extractQuickTimeDate(filePath: string): Promise<Date | null> {
+  try {
+    const { stdout } = await execFileAsync('mdls', [
+      '-name',
+      'kMDItemContentCreationDate',
+      '-raw',
+      filePath,
+    ]);
+    if (stdout && stdout.trim() !== '(null)') {
+      const parsed = new Date(stdout.trim());
+      if (!isNaN(parsed.getTime())) {
+        return parsed;
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Extracts targetYear and targetMonth from a local Date or ISO date string
+ * using local wall-clock components to prevent boundary date shifting near midnight.
  */
 export function getTargetYearMonth(dateInput: Date | string): { targetYear: string; targetMonth: string } {
   const d = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
-  const targetYear = d.getUTCFullYear().toString();
-  const targetMonth = MONTH_NAMES[d.getUTCMonth()];
+  const targetYear = d.getFullYear().toString();
+  const targetMonth = MONTH_NAMES[d.getMonth()];
   return { targetYear, targetMonth };
 }
 
@@ -183,7 +213,6 @@ export async function scanStagingDirectory(stagingDir: string): Promise<AssetBun
       return IMAGE_EXTENSIONS.has(extLower);
     });
 
-    // Assign roles to each file in the group
     let primaryAssigned = false;
     const assetFiles: AssetFile[] = [];
 
@@ -219,7 +248,7 @@ export async function scanStagingDirectory(stagingDir: string): Promise<AssetBun
 
       if (VIDEO_EXTENSIONS.has(extLower)) {
         if (hasImageFile) {
-          // Associated with an image in the bundle -> live video
+          // Companion video in a photo bundle -> live video
           role = 'live_video';
         } else if (!primaryAssigned) {
           // Standalone video bundle -> primary
@@ -244,26 +273,41 @@ export async function scanStagingDirectory(stagingDir: string): Promise<AssetBun
       });
     }
 
-    // If no primary was assigned yet (e.g. only edited render or sidecar was transferred)
+    // If no primary was assigned yet (e.g. only edited render was transferred):
+    // Promote edited_render (or first non-sidecar file) to primary.
+    // An .AAE sidecar must NEVER be assigned role: 'primary'.
     if (!primaryAssigned) {
-      const candidate = assetFiles.find((f) => f.role === 'edited_render') ?? assetFiles[0];
-      if (candidate && candidate.role !== 'edited_render') {
+      const candidate =
+        assetFiles.find((f) => f.role === 'edited_render') ??
+        assetFiles.find((f) => f.role !== 'edit_sidecar');
+      if (candidate) {
         candidate.role = 'primary';
+        primaryAssigned = true;
       }
     }
 
-    // Select preview path: prefer edited render, then primary, then first file
-    const editedRender = assetFiles.find((f) => f.role === 'edited_render');
-    const primaryFile = assetFiles.find((f) => f.role === 'primary');
-    const previewPath = (editedRender ?? primaryFile ?? assetFiles[0]).path;
+    // Select preview path prioritizing still image files over video files:
+    // 1. Edited render image (e.g. IMG_E1002.HEIC)
+    // 2. Primary image (e.g. IMG_1001.HEIC)
+    // 3. Any image file in the bundle
+    // 4. Edited render video or primary video or first file
+    const isImage = (f: AssetFile) => IMAGE_EXTENSIONS.has(f.ext.toLowerCase());
+    const previewFile =
+      assetFiles.find((f) => f.role === 'edited_render' && isImage(f)) ??
+      assetFiles.find((f) => f.role === 'primary' && isImage(f)) ??
+      assetFiles.find((f) => isImage(f)) ??
+      assetFiles.find((f) => f.role === 'edited_render') ??
+      assetFiles.find((f) => f.role === 'primary') ??
+      assetFiles[0];
+    const previewPath = previewFile ? previewFile.path : '';
 
     // Extract capture date: check primary, then edited render, then live video
     let capturedDate: Date | null = null;
     let dateReliable = false;
 
     const filesToProbe = [
-      primaryFile,
-      editedRender,
+      assetFiles.find((f) => f.role === 'primary'),
+      assetFiles.find((f) => f.role === 'edited_render'),
       assetFiles.find((f) => f.role === 'live_video'),
     ].filter((f): f is AssetFile => Boolean(f));
 
@@ -274,18 +318,28 @@ export async function scanStagingDirectory(stagingDir: string): Promise<AssetBun
         dateReliable = true;
         break;
       }
+
+      // If video file, try mdls QuickTime metadata fallback on macOS
+      if (VIDEO_EXTENSIONS.has(file.ext.toLowerCase())) {
+        const qtDate = await extractQuickTimeDate(file.path);
+        if (qtDate) {
+          capturedDate = qtDate;
+          dateReliable = true;
+          break;
+        }
+      }
     }
 
-    // Fall back to birthtime/mtime if no EXIF date found
+    // Fall back to birthtime/mtime if no EXIF or QuickTime date found
     if (!capturedDate) {
-      const fallbackFile = groupFiles.find((f) => f.fullPath === (primaryFile?.path ?? previewPath)) ?? groupFiles[0];
+      const fallbackFile = groupFiles.find((f) => f.fullPath === previewPath) ?? groupFiles[0];
       const validBirthtime = fallbackFile.birthtime && fallbackFile.birthtime.getTime() > 0;
       capturedDate = validBirthtime ? fallbackFile.birthtime : fallbackFile.mtime;
       dateReliable = false;
     }
 
     const capturedAt = capturedDate.toISOString();
-    const { targetYear, targetMonth } = getTargetYearMonth(capturedAt);
+    const { targetYear, targetMonth } = getTargetYearMonth(capturedDate);
 
     // Order files predictably: primary -> edited_render -> live_video -> edit_sidecar
     const rolePriority: Record<AssetFileRole, number> = {
