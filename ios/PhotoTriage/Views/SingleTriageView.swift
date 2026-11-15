@@ -63,36 +63,37 @@ public struct SingleTriageView: View {
     // MARK: - Metadata Header
 
     private func metadataHeader(for asset: TriageAsset) -> some View {
-        VStack(spacing: 4) {
+        VStack(spacing: 6) {
             // Index & Status Row
             HStack {
-                HStack(spacing: 4) {
-                    Text("BATCH:")
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
-                        .foregroundColor(.slate500)
-                    Text("\(triageState.selectedMonth?.displayName ?? "UNKNOWN")")
-                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                HStack(spacing: 6) {
+                    Image(systemName: "folder.fill")
+                        .font(.system(size: 12, weight: .bold))
                         .foregroundColor(.consoleCyan)
+                    Text("\(triageState.selectedMonth?.displayName ?? "UNKNOWN")")
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .foregroundColor(.slate100)
                 }
 
                 Spacer()
 
                 // Progress Counter
                 HStack(spacing: 4) {
-                    Text("INDEX:")
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
-                        .foregroundColor(.slate500)
-                    Text("[\(triageState.currentIndex + 1)/\(triageState.totalCount)]")
-                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    Text("\(triageState.currentIndex + 1) of \(triageState.totalCount)")
+                        .font(.system(size: 12, weight: .bold, design: .monospaced))
                         .foregroundColor(.slate200)
                 }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Color.slate800)
+                .cornerRadius(6)
             }
 
-            // High-density Monospaced Technical Spec Line
+            // High-density Technical Spec Line
             HStack(spacing: 8) {
                 // Filename
                 Text(asset.originalFilename ?? asset.canonicalName)
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundColor(.slate200)
                     .lineLimit(1)
 
@@ -100,12 +101,12 @@ public struct SingleTriageView: View {
 
                 // Dimensions
                 Text(asset.formattedDimensions)
-                    .font(.system(size: 10, design: .monospaced))
+                    .font(.system(size: 11, design: .monospaced))
                     .foregroundColor(.slate400)
 
                 // Size
                 Text(asset.formattedSize)
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
                     .foregroundColor(.slate300)
 
                 // Media type badges
@@ -120,36 +121,36 @@ public struct SingleTriageView: View {
             // Destination and timestamp
             HStack {
                 Text("DATE: \(asset.formattedDate)")
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundColor(.slate500)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundColor(.slate400)
 
                 Spacer()
 
                 Text("DEST: /\(asset.targetYear)/\(asset.targetMonth)/")
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
                     .foregroundColor(.consoleCyan)
             }
-            .padding(.top, 1)
 
             Rectangle()
                 .fill(Color.slate800)
                 .frame(height: 1)
-                .padding(.top, 4)
+                .padding(.top, 2)
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 16)
         .padding(.top, 8)
-        .padding(.bottom, 4)
+        .padding(.bottom, 6)
         .background(Color.slate900)
     }
 
     private func badgeView(text: String, color: Color) -> some View {
         Text(text)
-            .font(.system(size: 9, weight: .bold, design: .monospaced))
+            .font(.system(size: 10, weight: .bold, design: .monospaced))
             .foregroundColor(color)
-            .padding(.horizontal, 4)
-            .padding(.vertical, 1)
-            .background(color.opacity(0.15))
-            .utilitarianBorder(color: color, width: 1, cornerRadius: 2)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(color.opacity(0.18))
+            .cornerRadius(4)
+            .utilitarianBorder(color: color, width: 1, cornerRadius: 4)
     }
 
     // MARK: - Photo Canvas
@@ -281,164 +282,180 @@ public struct SingleTriageView: View {
     }
 
     private func decisionStatusBar(for asset: TriageAsset) -> some View {
-        HStack {
+        HStack(spacing: 12) {
             // Decision Badge
-            HStack(spacing: 6) {
+            HStack(spacing: 8) {
                 Text("STATUS:")
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
-                    .foregroundColor(.slate500)
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .foregroundColor(.slate400)
 
                 Text(currentDecision.title.uppercased())
-                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
                     .foregroundColor(currentDecision.color)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(currentDecision.color.opacity(0.15))
-                    .utilitarianBorder(color: currentDecision.color, width: 1, cornerRadius: 2)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(currentDecision.color.opacity(0.18))
+                    .cornerRadius(6)
+                    .utilitarianBorder(color: currentDecision.color, width: 1, cornerRadius: 6)
             }
 
             Spacer()
 
-            // Undo Button
+            // Undo Button (Comfortable 38pt height)
             Button {
+                triggerHapticFeedback(0)
                 triageState.undo()
             } label: {
-                HStack(spacing: 4) {
+                HStack(spacing: 6) {
                     Image(systemName: "arrow.uturn.backward")
-                        .font(.system(size: 11, weight: .bold))
+                        .font(.system(size: 12, weight: .bold))
                     Text("UNDO")
-                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
                 }
-                .foregroundColor(triageState.canUndo ? .slate200 : .slate600)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(Color.slate800)
-                .utilitarianBorder(color: triageState.canUndo ? .slate600 : .slate800, width: 1, cornerRadius: 3)
+                .foregroundColor(triageState.canUndo ? .slate100 : .slate600)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 7)
+                .background(triageState.canUndo ? Color.slate800 : Color.slate900)
+                .cornerRadius(8)
+                .utilitarianBorder(color: triageState.canUndo ? .slate600 : .slate800, width: 1, cornerRadius: 8)
             }
             .disabled(!triageState.canUndo)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
         .background(Color.slate900)
     }
 
     // MARK: - Tactile Action Bar
 
     private var tactileActionBar: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 10) {
             Rectangle()
                 .fill(Color.slate800)
                 .frame(height: 1)
 
-            // Primary 3-Way Triage Controls
-            HStack(spacing: 8) {
+            // Primary 3-Way Triage Controls (Comfortable 56pt height!)
+            HStack(spacing: 10) {
                 // Trash Button (Delete from Phone)
                 Button {
+                    triggerHapticFeedback(1)
                     applyDecision(.trash)
                 } label: {
-                    VStack(spacing: 2) {
+                    VStack(spacing: 3) {
                         HStack(spacing: 4) {
-                            Image(systemName: "trash")
+                            Image(systemName: "trash.fill")
+                                .font(.system(size: 15, weight: .bold))
                             Text("🗑️ Trash")
+                                .font(.system(size: 14, weight: .bold, design: .rounded))
                         }
-                        .font(.system(size: 12, weight: .bold, design: .monospaced))
                         Text("Delete from phone")
-                            .font(.system(size: 9, design: .monospaced))
-                            .foregroundColor(.slate400)
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(.triageTrash.opacity(0.85))
                     }
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
-                    .background(currentDecision == .trash ? Color.triageTrash.opacity(0.2) : Color.slate900)
-                    .utilitarianBorder(color: .triageTrash, width: currentDecision == .trash ? 2 : 1, cornerRadius: 4)
+                    .frame(height: 56)
+                    .background(currentDecision == .trash ? Color.triageTrash.opacity(0.35) : Color.triageTrash.opacity(0.12))
+                    .cornerRadius(12)
+                    .utilitarianBorder(color: .triageTrash, width: currentDecision == .trash ? 2 : 1, cornerRadius: 12)
                 }
                 .foregroundColor(.triageTrash)
 
                 // HD Only Button (Offload to Hard Drive)
                 Button {
+                    triggerHapticFeedback(1)
                     applyDecision(.backupOnly)
                 } label: {
-                    VStack(spacing: 2) {
+                    VStack(spacing: 3) {
                         HStack(spacing: 4) {
-                            Image(systemName: "externaldrive")
+                            Image(systemName: "externaldrive.fill")
+                                .font(.system(size: 15, weight: .bold))
                             Text("💾 HD Only")
+                                .font(.system(size: 14, weight: .bold, design: .rounded))
                         }
-                        .font(.system(size: 12, weight: .bold, design: .monospaced))
                         Text("Offload to HD")
-                            .font(.system(size: 9, design: .monospaced))
-                            .foregroundColor(.slate400)
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(.triageBackupOnly.opacity(0.85))
                     }
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
-                    .background(currentDecision == .backupOnly ? Color.triageBackupOnly.opacity(0.2) : Color.slate900)
-                    .utilitarianBorder(color: .triageBackupOnly, width: currentDecision == .backupOnly ? 2 : 1, cornerRadius: 4)
+                    .frame(height: 56)
+                    .background(currentDecision == .backupOnly ? Color.triageBackupOnly.opacity(0.35) : Color.triageBackupOnly.opacity(0.12))
+                    .cornerRadius(12)
+                    .utilitarianBorder(color: .triageBackupOnly, width: currentDecision == .backupOnly ? 2 : 1, cornerRadius: 12)
                 }
                 .foregroundColor(.triageBackupOnly)
 
                 // HD + Phone Button (Back up and keep)
                 Button {
+                    triggerHapticFeedback(1)
                     applyDecision(.backupKeep)
                 } label: {
-                    VStack(spacing: 2) {
+                    VStack(spacing: 3) {
                         HStack(spacing: 4) {
-                            Image(systemName: "externaldrive.badge.plus")
+                            Image(systemName: "iphone.badge.checkmark")
+                                .font(.system(size: 15, weight: .bold))
                             Text("💾+📱 HD+Phone")
+                                .font(.system(size: 14, weight: .bold, design: .rounded))
                         }
-                        .font(.system(size: 12, weight: .bold, design: .monospaced))
                         Text("Backup & keep")
-                            .font(.system(size: 9, design: .monospaced))
-                            .foregroundColor(.slate400)
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(.triageBackupKeep.opacity(0.85))
                     }
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
-                    .background(currentDecision == .backupKeep ? Color.triageBackupKeep.opacity(0.2) : Color.slate900)
-                    .utilitarianBorder(color: .triageBackupKeep, width: currentDecision == .backupKeep ? 2 : 1, cornerRadius: 4)
+                    .frame(height: 56)
+                    .background(currentDecision == .backupKeep ? Color.triageBackupKeep.opacity(0.35) : Color.triageBackupKeep.opacity(0.12))
+                    .cornerRadius(12)
+                    .utilitarianBorder(color: .triageBackupKeep, width: currentDecision == .backupKeep ? 2 : 1, cornerRadius: 12)
                 }
                 .foregroundColor(.triageBackupKeep)
             }
-            .padding(.horizontal, 10)
+            .padding(.horizontal, 14)
 
-            // Bottom Navigation Stepper Row
+            // Bottom Navigation Stepper Row (44pt touch targets)
             HStack(spacing: 12) {
                 Button {
+                    triggerHapticFeedback(0)
                     triageState.goToPrevious()
                 } label: {
-                    HStack(spacing: 4) {
+                    HStack(spacing: 6) {
                         Image(systemName: "chevron.left")
                         Text("PREV")
                     }
-                    .font(.system(size: 11, weight: .bold, design: .monospaced))
-                    .foregroundColor(triageState.canGoPrevious ? .slate200 : .slate600)
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .foregroundColor(triageState.canGoPrevious ? .slate100 : .slate600)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 7)
+                    .frame(height: 44)
                     .background(Color.slate800)
-                    .utilitarianBorder(color: triageState.canGoPrevious ? .slate700 : .slate800, width: 1, cornerRadius: 3)
+                    .cornerRadius(10)
+                    .utilitarianBorder(color: triageState.canGoPrevious ? .slate700 : .slate800, width: 1, cornerRadius: 10)
                 }
                 .disabled(!triageState.canGoPrevious)
 
-                // Gesture legend
+                // Gesture hint
                 Text("SWIPE: ◀ TRASH | UP: HD | KEEP: ▶")
-                    .font(.system(size: 9, weight: .medium, design: .monospaced))
-                    .foregroundColor(.slate500)
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundColor(.slate400)
                     .lineLimit(1)
 
                 Button {
+                    triggerHapticFeedback(0)
                     triageState.goToNext()
                 } label: {
-                    HStack(spacing: 4) {
+                    HStack(spacing: 6) {
                         Text("NEXT")
                         Image(systemName: "chevron.right")
                     }
-                    .font(.system(size: 11, weight: .bold, design: .monospaced))
-                    .foregroundColor(triageState.canGoNext ? .slate200 : .slate600)
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .foregroundColor(triageState.canGoNext ? .slate100 : .slate600)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 7)
+                    .frame(height: 44)
                     .background(Color.slate800)
-                    .utilitarianBorder(color: triageState.canGoNext ? .slate700 : .slate800, width: 1, cornerRadius: 3)
+                    .cornerRadius(10)
+                    .utilitarianBorder(color: triageState.canGoNext ? .slate700 : .slate800, width: 1, cornerRadius: 10)
                 }
                 .disabled(!triageState.canGoNext)
             }
-            .padding(.horizontal, 10)
-            .padding(.bottom, 6)
+            .padding(.horizontal, 14)
+            .padding(.bottom, 8)
         }
         .background(Color.slate950)
     }

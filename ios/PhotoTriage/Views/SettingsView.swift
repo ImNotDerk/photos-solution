@@ -77,36 +77,38 @@ public struct SettingsView: View {
     // MARK: - Server Configuration Card
 
     private var serverConfigCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text("MAC BACKUP SERVER HOST:")
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
                     .foregroundColor(.slate400)
 
                 Spacer()
 
                 Button {
+                    triggerHapticFeedback(0)
                     inputUrl = NetworkManager.defaultServerUrl
                     saveUrl()
                 } label: {
                     Text("DEFAULT")
-                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
                         .foregroundColor(.slate300)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
                         .background(Color.slate800)
-                        .utilitarianBorder(color: .slate700, width: 1, cornerRadius: 2)
+                        .cornerRadius(6)
+                        .utilitarianBorder(color: .slate700, width: 1, cornerRadius: 6)
                 }
             }
 
-            // Input Field
-            HStack(spacing: 6) {
+            // Input Field (Comfortable 44pt touch area)
+            HStack(spacing: 8) {
                 Image(systemName: "network")
-                    .font(.system(size: 12))
+                    .font(.system(size: 14))
                     .foregroundColor(.consoleCyan)
 
                 TextField("http://10.142.1.127:3000", text: $inputUrl)
-                    .font(.system(size: 12, design: .monospaced))
+                    .font(.system(size: 14, design: .monospaced))
                     .foregroundColor(.slate100)
                     #if canImport(UIKit)
                     .autocapitalization(.none)
@@ -117,44 +119,49 @@ public struct SettingsView: View {
                         saveUrl()
                     }
             }
-            .padding(8)
+            .padding(12)
             .background(Color.slate950)
-            .utilitarianBorder(color: .slate700, width: 1, cornerRadius: 3)
+            .cornerRadius(10)
+            .utilitarianBorder(color: .slate700, width: 1, cornerRadius: 10)
 
             // Save and Test Buttons
-            HStack(spacing: 8) {
+            HStack(spacing: 10) {
                 Button {
+                    triggerHapticFeedback(0)
                     saveUrl()
                 } label: {
                     Text("SAVE URL")
-                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
                         .foregroundColor(.slate100)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
+                        .frame(height: 44)
                         .background(Color.slate800)
-                        .utilitarianBorder(color: .slate600, width: 1, cornerRadius: 3)
+                        .cornerRadius(10)
+                        .utilitarianBorder(color: .slate600, width: 1, cornerRadius: 10)
                 }
 
                 Button {
+                    triggerHapticFeedback(1)
                     saveUrl()
                     runDiagnostics()
                 } label: {
-                    HStack(spacing: 4) {
+                    HStack(spacing: 6) {
                         if isPinging {
                             ProgressView()
-                                .scaleEffect(0.6)
+                                .scaleEffect(0.7)
                                 .tint(.slate950)
                         } else {
                             Image(systemName: "bolt.fill")
                         }
                         Text(isPinging ? "TESTING..." : "TEST CONNECTION")
                     }
-                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
                     .foregroundColor(.slate950)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
+                    .frame(height: 44)
                     .background(Color.consoleCyan)
-                    .utilitarianBorder(color: .consoleCyan, width: 1, cornerRadius: 3)
+                    .cornerRadius(10)
+                    .utilitarianBorder(color: .consoleCyan, width: 1, cornerRadius: 10)
                 }
                 .disabled(isPinging)
             }

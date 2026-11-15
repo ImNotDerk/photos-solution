@@ -390,7 +390,7 @@ public struct BackupProgressView: View {
     // MARK: - Bottom Action Bar
 
     private var bottomActionBar: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 8) {
             Rectangle()
                 .fill(Color.slate800)
                 .frame(height: 1)
@@ -398,59 +398,67 @@ public struct BackupProgressView: View {
             HStack(spacing: 8) {
                 if case .failed = stage {
                     Button {
+                        triggerHapticFeedback(1)
                         startBackupPipeline()
                     } label: {
                         HStack(spacing: 6) {
                             Image(systemName: "arrow.clockwise")
+                                .font(.system(size: 14, weight: .bold))
                             Text("RETRY BACKUP")
+                                .font(.system(size: 14, weight: .bold, design: .rounded))
                         }
-                        .font(.system(size: 12, weight: .bold, design: .monospaced))
                         .foregroundColor(.slate100)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
+                        .frame(height: 52)
                         .background(Color.slate800)
-                        .utilitarianBorder(color: .consoleCyan, width: 1, cornerRadius: 3)
+                        .cornerRadius(12)
+                        .utilitarianBorder(color: .consoleCyan, width: 1, cornerRadius: 12)
                     }
                 } else if case .completed = stage {
                     Button {
+                        triggerHapticFeedback(0)
                         // Reset batch and return
                         triageState.reset()
                         stage = .idle
                     } label: {
                         Text("SELECT ANOTHER MONTH")
-                            .font(.system(size: 12, weight: .bold, design: .monospaced))
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
                             .foregroundColor(.consoleCyan)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 10)
+                            .frame(height: 52)
                             .background(Color.slate800)
-                            .utilitarianBorder(color: .consoleCyan, width: 1, cornerRadius: 3)
+                            .cornerRadius(12)
+                            .utilitarianBorder(color: .consoleCyan, width: 1, cornerRadius: 12)
                     }
                 } else {
                     Button {
+                        triggerHapticFeedback(1)
                         startBackupPipeline()
                     } label: {
-                        HStack(spacing: 6) {
+                        HStack(spacing: 8) {
                             if isExecuting {
                                 ProgressView()
-                                    .scaleEffect(0.8)
+                                    .scaleEffect(0.9)
                                     .tint(.slate950)
                             } else {
                                 Image(systemName: "externaldrive.badge.icloud")
+                                    .font(.system(size: 16, weight: .bold))
                             }
                             Text(isExecuting ? "EXECUTING BACKUP..." : "EXECUTE BACKUP & PURGE")
+                                .font(.system(size: 14, weight: .bold, design: .rounded))
                         }
-                        .font(.system(size: 12, weight: .bold, design: .monospaced))
                         .foregroundColor(isExecuting ? .slate400 : .slate950)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
+                        .frame(height: 52)
                         .background(isExecuting ? Color.slate800 : Color.consoleCyan)
-                        .utilitarianBorder(color: isExecuting ? .slate700 : .consoleCyan, width: 1, cornerRadius: 3)
+                        .cornerRadius(12)
+                        .utilitarianBorder(color: isExecuting ? .slate700 : .consoleCyan, width: 1, cornerRadius: 12)
                     }
                     .disabled(isExecuting || (itemsToUpload.isEmpty && itemsToDelete.isEmpty))
                 }
             }
-            .padding(.horizontal, 10)
-            .padding(.bottom, 6)
+            .padding(.horizontal, 14)
+            .padding(.bottom, 8)
         }
         .background(Color.slate950)
     }

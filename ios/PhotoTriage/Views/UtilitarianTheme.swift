@@ -98,7 +98,45 @@ public extension View {
     }
 }
 
-// MARK: - Tactile Rectangular Button Style
+// MARK: - Mobile-Friendly Apple Ergonomic Helpers
+
+public func triggerHapticFeedback(_ style: Int = 1) {
+    #if canImport(UIKit)
+    let generator = UIImpactFeedbackGenerator(style: style == 0 ? .light : (style == 1 ? .medium : .heavy))
+    generator.prepare()
+    generator.impactOccurred()
+    #endif
+}
+
+public struct AppleActionButtonModifier: ViewModifier {
+    public var backgroundColor: Color
+    public var foregroundColor: Color
+    public var cornerRadius: CGFloat = 12
+
+    public func body(content: Content) -> some View {
+        content
+            .foregroundColor(foregroundColor)
+            .frame(maxWidth: .infinity)
+            .frame(minHeight: 50)
+            .background(backgroundColor)
+            .cornerRadius(cornerRadius)
+    }
+}
+
+public extension View {
+    func appleActionButton(
+        backgroundColor: Color,
+        foregroundColor: Color = .white,
+        cornerRadius: CGFloat = 12
+    ) -> some View {
+        modifier(AppleActionButtonModifier(
+            backgroundColor: backgroundColor,
+            foregroundColor: foregroundColor,
+            cornerRadius: cornerRadius
+        ))
+    }
+}
+
 
 public struct TactileButtonStyle: ButtonStyle {
     public var foregroundColor: Color = .slate100

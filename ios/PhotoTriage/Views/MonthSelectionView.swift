@@ -70,41 +70,43 @@ public struct MonthSelectionView: View {
     // MARK: - Header Bar
 
     private var headerBar: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 8) {
             HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("ARCHIVE // DIRECTORY")
-                        .font(.system(size: 14, weight: .bold, design: .monospaced))
-                        .foregroundColor(.consoleCyan)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Select a Month")
+                        .font(.system(size: 17, weight: .bold, design: .rounded))
+                        .foregroundColor(.slate100)
 
-                    Text("\(photoKitManager.months.count) MONTHS DETECTED • \(totalAssetsInArchive) ASSETS")
-                        .font(.system(size: 11, weight: .regular, design: .monospaced))
+                    Text("\(photoKitManager.months.count) months detected • \(totalAssetsInArchive) total assets")
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
                         .foregroundColor(.slate400)
                 }
 
                 Spacer()
 
                 Button {
+                    triggerHapticFeedback(0)
                     Task {
                         await photoKitManager.fetchMonths()
                     }
                 } label: {
-                    HStack(spacing: 4) {
+                    HStack(spacing: 5) {
                         Image(systemName: "arrow.clockwise")
-                            .font(.system(size: 11, weight: .bold))
+                            .font(.system(size: 12, weight: .bold))
                         Text("RE-SCAN")
-                            .font(.system(size: 11, weight: .bold, design: .monospaced))
+                            .font(.system(size: 12, weight: .bold, design: .rounded))
                     }
                     .foregroundColor(.slate200)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 6)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
                     .background(Color.slate800)
-                    .utilitarianBorder(color: .slate700, width: 1, cornerRadius: 3)
+                    .cornerRadius(8)
+                    .utilitarianBorder(color: .slate700, width: 1, cornerRadius: 8)
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.top, 10)
-            .padding(.bottom, 6)
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+            .padding(.bottom, 8)
 
             Rectangle()
                 .fill(Color.slate800)
@@ -117,10 +119,11 @@ public struct MonthSelectionView: View {
 
     private var monthListView: some View {
         ScrollView {
-            LazyVStack(spacing: 8) {
+            LazyVStack(spacing: 10) {
                 ForEach(filteredMonths) { group in
                     let isCurrent = triageState.selectedMonth?.id == group.id
                     Button {
+                        triggerHapticFeedback(1)
                         selectMonth(group)
                     } label: {
                         monthRow(group: group, isCurrent: isCurrent)
@@ -128,46 +131,48 @@ public struct MonthSelectionView: View {
                     .buttonStyle(.plain)
                 }
             }
-            .padding(12)
+            .padding(14)
         }
     }
 
     private func monthRow(group: YearMonthGroup, isCurrent: Bool) -> some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 14) {
             // Calendar icon / Year block
-            VStack(alignment: .center, spacing: 1) {
+            VStack(alignment: .center, spacing: 2) {
                 Text(String(group.year))
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
                     .foregroundColor(isCurrent ? .consoleCyan : .slate400)
 
                 Text(group.monthName.prefix(3))
-                    .font(.system(size: 14, weight: .black, design: .monospaced))
+                    .font(.system(size: 15, weight: .black, design: .rounded))
                     .foregroundColor(isCurrent ? .slate100 : .slate200)
             }
-            .frame(width: 54, height: 44)
+            .frame(width: 58, height: 48)
             .background(isCurrent ? Color.slate800 : Color.slate950)
-            .utilitarianBorder(color: isCurrent ? .consoleCyan : .slate700, width: 1, cornerRadius: 2)
+            .cornerRadius(10)
+            .utilitarianBorder(color: isCurrent ? .consoleCyan : .slate700, width: 1, cornerRadius: 10)
 
             // Month description & photo count
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
                     Text(group.displayName)
-                        .font(.system(size: 14, weight: .bold, design: .monospaced))
+                        .font(.system(size: 15, weight: .bold, design: .rounded))
                         .foregroundColor(.slate100)
 
                     if isCurrent {
                         Text("[ACTIVE]")
-                            .font(.system(size: 9, weight: .bold, design: .monospaced))
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
                             .foregroundColor(.consoleCyan)
-                            .padding(.horizontal, 4)
-                            .padding(.vertical, 1)
-                            .background(Color.consoleCyan.opacity(0.15))
-                            .utilitarianBorder(color: .consoleCyan, width: 1, cornerRadius: 2)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.consoleCyan.opacity(0.18))
+                            .cornerRadius(4)
+                            .utilitarianBorder(color: .consoleCyan, width: 1, cornerRadius: 4)
                     }
                 }
 
                 Text("\(group.assetCount) items • /Volumes/HD/\(group.year)/\(group.monthName)/")
-                    .font(.system(size: 11, weight: .regular, design: .monospaced))
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
                     .foregroundColor(.slate400)
                     .lineLimit(1)
             }
@@ -176,12 +181,14 @@ public struct MonthSelectionView: View {
 
             // Chevron
             Image(systemName: "chevron.right")
-                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                .font(.system(size: 13, weight: .bold))
                 .foregroundColor(isCurrent ? .consoleCyan : .slate500)
         }
-        .padding(10)
-        .background(isCurrent ? Color.slate800.opacity(0.8) : Color.slate900)
-        .utilitarianBorder(color: isCurrent ? .consoleCyan : .slate800, width: 1, cornerRadius: 4)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(isCurrent ? Color.slate800.opacity(0.7) : Color.slate900)
+        .cornerRadius(12)
+        .utilitarianBorder(color: isCurrent ? .consoleCyan.opacity(0.8) : .slate800, width: 1, cornerRadius: 12)
     }
 
     private func selectMonth(_ group: YearMonthGroup) {
