@@ -233,9 +233,10 @@ public final class PhotoKitManager: ObservableObject {
         let safeSize = CGSize(width: targetWidth, height: targetHeight)
 
         let options = PHImageRequestOptions()
-        options.deliveryMode = .opportunistic
+        options.deliveryMode = .highQualityFormat
         options.isNetworkAccessAllowed = true
         options.isSynchronous = false
+        options.version = .current
 
         return await withCheckedContinuation { continuation in
             let box = StateBox()
@@ -258,16 +259,13 @@ public final class PhotoKitManager: ObservableObject {
                     return
                 }
 
-                if let img = image {
-                    self?.thumbnailCache.setObject(img, forKey: cacheKey)
+                if let isDegraded = info?[PHImageResultIsDegradedKey] as? Bool, isDegraded {
+                    // With highQualityFormat, wait for the final full-fidelity image
+                    return
                 }
 
-                if let isDegraded = info?[PHImageResultIsDegradedKey] as? Bool, isDegraded {
-                    // For ultra-responsive rendering, deliver degraded preview immediately if non-nil
-                    if let img = image, box.tryResume() {
-                        continuation.resume(returning: img)
-                    }
-                    return
+                if let img = image {
+                    self?.thumbnailCache.setObject(img, forKey: cacheKey)
                 }
 
                 if box.tryResume() {

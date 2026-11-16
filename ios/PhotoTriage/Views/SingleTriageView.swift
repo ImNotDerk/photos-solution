@@ -56,6 +56,11 @@ public struct SingleTriageView: View {
                     // 3. Filmstrip Scrubber & Bottom Toolbar
                     nativeBottomToolbar
                 }
+
+                // Instagram-style spring popup overlay in center
+                if let decision = popDecision {
+                    instagramPopOverlay(decision: decision)
+                }
             } else {
                 emptyStateView
             }
@@ -222,6 +227,7 @@ public struct SingleTriageView: View {
             let width = geometry.size.width
             let height = geometry.size.height
             let slideSize = CGSize(width: width, height: height)
+            let stride = width > 0 ? (width + 16) : 390
 
             ZStack {
                 Color.black
@@ -232,35 +238,44 @@ public struct SingleTriageView: View {
                 HStack(spacing: 16) {
                     // Slot 0: Previous asset or empty placeholder
                     if triageState.currentIndex > 0 {
+                        let prevAsset = triageState.assets[triageState.currentIndex - 1]
                         AssetSlideView(
-                            asset: triageState.assets[triageState.currentIndex - 1],
+                            asset: prevAsset,
                             size: slideSize
                         )
+                        .id("slot0-\(prevAsset.id)")
                     } else {
                         Color.clear.frame(width: width, height: height)
                     }
 
                     // Slot 1: Current asset (ALWAYS centered)
-                    AssetSlideView(
-                        asset: currentAsset,
-                        size: slideSize,
-                        isCenter: true,
-                        zoomScale: zoomScale,
-                        verticalOffset: dragOffset.height
-                    )
+                    if let cur = currentAsset {
+                        AssetSlideView(
+                            asset: cur,
+                            size: slideSize,
+                            isCenter: true,
+                            zoomScale: zoomScale,
+                            verticalOffset: dragOffset.height
+                        )
+                        .id("slot1-\(cur.id)")
+                    } else {
+                        Color.clear.frame(width: width, height: height)
+                    }
 
                     // Slot 2: Next asset or empty placeholder
                     if triageState.currentIndex < triageState.totalCount - 1 {
+                        let nextAsset = triageState.assets[triageState.currentIndex + 1]
                         AssetSlideView(
-                            asset: triageState.assets[triageState.currentIndex + 1],
+                            asset: nextAsset,
                             size: slideSize
                         )
+                        .id("slot2-\(nextAsset.id)")
                     } else {
                         Color.clear.frame(width: width, height: height)
                     }
                 }
                 .offset(x: dragOffset.width)
-                .gesture(horizontalSwipeGesture)
+                .gesture(horizontalSwipeGesture(stride: stride))
                 .simultaneousGesture(magnificationGesture)
                 .onTapGesture(count: 2) {
                     // Double-tap: Reset zoom if zoomed in, otherwise trigger Keep (Instagram pop)
@@ -271,11 +286,6 @@ public struct SingleTriageView: View {
                     } else {
                         applyTriageDecision(.backupKeep)
                     }
-                }
-
-                // Instagram-style spring popup overlay in center
-                if let decision = popDecision {
-                    instagramPopOverlay(decision: decision)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -288,21 +298,22 @@ public struct SingleTriageView: View {
         VStack(spacing: 8) {
             ZStack {
                 Circle()
-                    .fill(decisionBadgeColor(for: decision).opacity(0.92))
-                    .frame(width: 80, height: 80)
-                    .shadow(color: decisionBadgeColor(for: decision).opacity(0.5), radius: 16, x: 0, y: 6)
+                    .fill(decisionBadgeColor(for: decision).opacity(0.95))
+                    .frame(width: 84, height: 84)
+                    .shadow(color: decisionBadgeColor(for: decision).opacity(0.6), radius: 20, x: 0, y: 8)
                 Image(systemName: decisionPopIcon(for: decision))
-                    .font(.system(size: 38, weight: .bold))
+                    .font(.system(size: 40, weight: .bold))
                     .foregroundColor(.white)
             }
             Text(decisionPopLabel(for: decision))
-                .font(.system(size: 13, weight: .bold))
+                .font(.system(size: 14, weight: .bold))
                 .foregroundColor(.white)
-                .shadow(color: .black.opacity(0.8), radius: 4, x: 0, y: 2)
+                .shadow(color: .black.opacity(0.9), radius: 6, x: 0, y: 2)
         }
         .scaleEffect(popScale)
         .opacity(popOpacity)
         .allowsHitTesting(false)
+        .zIndex(999)
     }
 
     private func decisionBadgeColor(for decision: TriageDecision) -> Color {
@@ -349,6 +360,11 @@ public struct SingleTriageView: View {
     }
 
     private var horizontalSwipeGesture: some Gesture {
+        let defaultStride: CGFloat = 390
+        return horizontalSwipeGesture(stride: defaultStride)
+    }
+
+    private func horizontalSwipeGesture(stride: CGFloat) -> some Gesture {
         DragGesture(minimumDistance: 10, coordinateSpace: .local)
             .onChanged { value in
                 guard zoomScale <= 1.05 else { return }
@@ -377,34 +393,42 @@ public struct SingleTriageView: View {
                 let dy = value.translation.height
 
                 // Vertical Dominant Gesture (Swipe Down = Trash, Swipe Up = HD Only)
-                if abs(dy) > 55 && abs(dy) > abs(dx) * 1.3 {
+                if abs(dy) > 40 && abs(dy) > abs(dx) {
                     withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
                         dragOffset = .zero
                     }
-                    if dy > 55 {
+                    if dy > 40 {
                         applyTriageDecision(.trash)
-                    } else if dy < -55 {
+                    } else if dy < -40 {
                         applyTriageDecision(.backupOnly)
                     }
                     return
                 }
 
-                // Horizontal Carousel Paging
-                let threshold: CGFloat = 60
+                // Horizontal Carousel Paging (Smooth zero bounce-back)
+                let threshold: CGFloat = 50
                 if dx < -threshold && triageState.currentIndex < triageState.totalCount - 1 {
-                    // Dragged left -> advance to next photo
+                    // Dragged left -> smoothly complete slide to next photo
                     withAnimation(.easeOut(duration: 0.2)) {
+                        dragOffset = CGSize(width: -stride, height: 0)
+                    }
+                    Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 200_000_000)
                         dragOffset = .zero
                         triageState.goToNext()
                     }
                 } else if dx > threshold && triageState.currentIndex > 0 {
-                    // Dragged right -> go back to previous photo
+                    // Dragged right -> smoothly complete slide to previous photo
                     withAnimation(.easeOut(duration: 0.2)) {
+                        dragOffset = CGSize(width: stride, height: 0)
+                    }
+                    Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 200_000_000)
                         dragOffset = .zero
                         triageState.goToPrevious()
                     }
                 } else {
-                    // Snap back smoothly
+                    // Snap back smoothly if below threshold
                     withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
                         dragOffset = .zero
                     }
@@ -517,23 +541,23 @@ public struct SingleTriageView: View {
         autoAdvanceTask?.cancel()
 
         popDecision = decision
-        popScale = 0.3
-        popOpacity = 0.0
+        popScale = 0.5
+        popOpacity = 1.0
 
         withAnimation(.spring(response: 0.35, dampingFraction: 0.6)) {
-            popScale = 1.2
-            popOpacity = 1.0
+            popScale = 1.15
         }
 
         triageState.triageCurrent(as: decision, autoAdvance: false)
 
         autoAdvanceTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 220_000_000)
-            withAnimation(.easeOut(duration: 0.15)) {
-                popScale = 1.0
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: 0.2)) {
+                popScale = 0.95
                 popOpacity = 0.0
             }
-            try? await Task.sleep(nanoseconds: 130_000_000)
+            try? await Task.sleep(nanoseconds: 150_000_000)
             guard !Task.isCancelled else { return }
             popDecision = nil
             withAnimation(.easeOut(duration: 0.25)) {
@@ -675,45 +699,42 @@ public struct AssetSlideView: View {
                     .scaleEffect(isCenter ? zoomScale : 1.0)
                     .offset(y: isCenter ? verticalOffset : 0)
             } else if asset != nil {
-                ProgressView().tint(.white)
+                ProgressView()
+                    .scaleEffect(1.2)
+                    .tint(.white)
             }
         }
         .frame(width: max(size.width, 1), height: max(size.height, 1))
         .clipped()
         .task(id: asset?.id) {
-            guard let asset = asset else {
-                slideImage = nil
-                return
-            }
-            if let cached = photoKitManager.cachedThumbnail(for: asset) {
-                slideImage = cached
-            }
-            isLoading = true
-            let targetW = size.width > 0 ? size.width * 2 : 1000
-            let targetH = size.height > 0 ? size.height * 2 : 1000
-            let loaded = await photoKitManager.loadThumbnail(for: asset, size: CGSize(width: targetW, height: targetH))
-            await MainActor.run {
-                if let loaded = loaded {
-                    self.slideImage = loaded
-                }
-                self.isLoading = false
-            }
+            await loadImage()
         }
         .onChange(of: size.width) { newWidth in
-            if newWidth > 0 && slideImage == nil && !isLoading, let asset = asset {
+            if newWidth > 0 && slideImage == nil && !isLoading {
                 Task {
-                    isLoading = true
-                    let targetW = newWidth * 2
-                    let targetH = (size.height > 0 ? size.height : newWidth) * 2
-                    let loaded = await photoKitManager.loadThumbnail(for: asset, size: CGSize(width: targetW, height: targetH))
-                    await MainActor.run {
-                        if let loaded = loaded {
-                            self.slideImage = loaded
-                        }
-                        self.isLoading = false
-                    }
+                    await loadImage()
                 }
             }
+        }
+    }
+
+    private func loadImage() async {
+        guard let asset = asset else {
+            slideImage = nil
+            return
+        }
+        if let cached = photoKitManager.cachedThumbnail(for: asset) {
+            self.slideImage = cached
+        }
+        isLoading = true
+        let targetW = size.width > 0 ? size.width * 2 : 1000
+        let targetH = size.height > 0 ? size.height * 2 : 1000
+        let loaded = await photoKitManager.loadThumbnail(for: asset, size: CGSize(width: targetW, height: targetH))
+        await MainActor.run {
+            if let loaded = loaded {
+                self.slideImage = loaded
+            }
+            self.isLoading = false
         }
     }
 }
