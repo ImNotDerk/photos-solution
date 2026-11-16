@@ -359,15 +359,12 @@ public struct SingleTriageView: View {
             }
     }
 
-    private var horizontalSwipeGesture: some Gesture {
-        let defaultStride: CGFloat = 390
-        return horizontalSwipeGesture(stride: defaultStride)
-    }
-
     private func horizontalSwipeGesture(stride: CGFloat) -> some Gesture {
         DragGesture(minimumDistance: 10, coordinateSpace: .local)
             .onChanged { value in
                 guard zoomScale <= 1.05 else { return }
+                autoAdvanceTask?.cancel()
+                popDecision = nil
 
                 let dx = value.translation.width
                 let dy = value.translation.height
@@ -412,8 +409,9 @@ public struct SingleTriageView: View {
                     withAnimation(.easeOut(duration: 0.2)) {
                         dragOffset = CGSize(width: -stride, height: 0)
                     }
-                    Task { @MainActor in
+                    autoAdvanceTask = Task { @MainActor in
                         try? await Task.sleep(nanoseconds: 200_000_000)
+                        guard !Task.isCancelled else { return }
                         dragOffset = .zero
                         triageState.goToNext()
                     }
@@ -422,8 +420,9 @@ public struct SingleTriageView: View {
                     withAnimation(.easeOut(duration: 0.2)) {
                         dragOffset = CGSize(width: stride, height: 0)
                     }
-                    Task { @MainActor in
+                    autoAdvanceTask = Task { @MainActor in
                         try? await Task.sleep(nanoseconds: 200_000_000)
+                        guard !Task.isCancelled else { return }
                         dragOffset = .zero
                         triageState.goToPrevious()
                     }
@@ -708,13 +707,6 @@ public struct AssetSlideView: View {
         .clipped()
         .task(id: asset?.id) {
             await loadImage()
-        }
-        .onChange(of: size.width) { newWidth in
-            if newWidth > 0 && slideImage == nil && !isLoading {
-                Task {
-                    await loadImage()
-                }
-            }
         }
     }
 

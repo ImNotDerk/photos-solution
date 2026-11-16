@@ -53,7 +53,7 @@ Before getting started, make sure you have:
 2. Unlock your iPhone. If prompted with **"Trust This Computer?"**, tap **Trust** and enter your iPhone passcode.
 3. On your Mac, open Terminal, navigate to the repository, and open the Xcode project:
    ```bash
-   cd ~/Documents/github-repositories/photos-solution
+   cd photos-solution
    open ios/PhotoTriage.xcodeproj
    ```
 
@@ -80,7 +80,7 @@ You do **not** need a paid \$99/year Apple Developer account. Apple permits free
 ## 5. Step 3: Build & Run on Your iPhone
 
 1. In Xcode's top toolbar, locate the run destination selector (next to the **Play / Stop** buttons).
-2. Click the destination selector and choose your physical iPhone from the list (e.g. **Derk's iPhone**), rather than a simulator.
+2. Click the destination selector and choose your physical iPhone from the list (e.g. **Your iPhone**), rather than a simulator.
 3. Click the **Play** button (or press `Cmd + R`) to compile and install the app.
 4. Xcode will compile the Swift source files, sign the binary, and install **PhotoTriage** onto your iPhone.
 

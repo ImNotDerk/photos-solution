@@ -190,6 +190,8 @@ describe('iOS Utilitarian SwiftUI Views Contract Tests (Task 4)', () => {
       expect(code).toContain('triageState.goToNext()');
       expect(code).toContain('triageState.goToPrevious()');
       expect(code).toContain('showDetailsSheet = true');
+      expect(code).toContain('autoAdvanceTask = Task { @MainActor in');
+      expect(code).toContain('guard !Task.isCancelled else { return }');
     });
 
     it('verifies FilmstripScrubberView and PhotoDetailsSheetView contracts', () => {

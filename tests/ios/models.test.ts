@@ -140,6 +140,10 @@ describe('iOS Model & PhotoKit Contract Tests (Task 2)', () => {
       expect(serviceCode).toContain('PHImageResultIsDegradedKey');
     });
 
+    it('ensures thumbnail cache respects target dimensions to prevent low-res collisions', () => {
+      expect(serviceCode).toContain('cached.size.width >= targetWidth * 0.8');
+    });
+
     it('streams video resources directly to disk using writeData to prevent OOM memory hazards', () => {
       expect(serviceCode).toContain('resourceManager.writeData(');
     });

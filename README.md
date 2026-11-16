@@ -90,7 +90,7 @@ flowchart TD
 
 ## 6. Quick Start: Native iOS App (Recommended)
 
-Follow the complete step-by-step guide in [docs/ios-setup-guide.md](file:///Users/derk/Documents/github-repositories/photos-solution/docs/ios-setup-guide.md).
+Follow the complete step-by-step guide in [docs/ios-setup-guide.md](docs/ios-setup-guide.md).
 
 ### 1. Install & Run on iPhone
 1. Connect your iPhone to your Mac via cable.
@@ -122,7 +122,7 @@ npm start -- --drive /Volumes/YourHardDrive
 
 If you prefer using Mobile Safari and AirDrop instead of Xcode:
 
-1. Follow [docs/shortcut-guide.md](file:///Users/derk/Documents/github-repositories/photos-solution/docs/shortcut-guide.md) to set up the `PhotoTriageCleanup` shortcut.
+1. Follow [docs/shortcut-guide.md](docs/shortcut-guide.md) to set up the `PhotoTriageCleanup` shortcut.
 2. AirDrop your monthly photos with **"All Photos Data" ON** to your Mac.
 3. Start the server with `npm start`.
 4. Scan the terminal QR code with your iPhone camera to open `http://<lan-ip>:3000`.

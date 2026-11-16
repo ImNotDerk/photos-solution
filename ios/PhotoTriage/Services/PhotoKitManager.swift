@@ -223,14 +223,15 @@ public final class PhotoKitManager: ObservableObject {
         for asset: TriageAsset,
         size: CGSize = CGSize(width: 320, height: 320)
     ) async -> UIImage? {
-        let cacheKey = asset.id as NSString
-        if let cached = thumbnailCache.object(forKey: cacheKey) {
-            return cached
-        }
-
         let targetWidth = max(size.width, 160)
         let targetHeight = max(size.height, 160)
         let safeSize = CGSize(width: targetWidth, height: targetHeight)
+
+        let cacheKey = asset.id as NSString
+        if let cached = thumbnailCache.object(forKey: cacheKey),
+           cached.size.width >= targetWidth * 0.8 {
+            return cached
+        }
 
         let options = PHImageRequestOptions()
         options.deliveryMode = .highQualityFormat
